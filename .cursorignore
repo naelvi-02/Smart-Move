@@ -1,0 +1,31 @@
+# --- System & Dependencies (JANGAN DIBACA AI) ---
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# --- Build & Output (SAMPAH HASIL BUILD) ---
+dist/
+build/
+.next/
+out/
+target/
+coverage/
+
+# --- Assets (GAMBAR/VIDEO - BOROS TOKEN) ---
+public/
+assets/
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.mp4
+*.ico
+
+# --- Config Files yang Ribet/Sensitive ---
+.env
+.env.local
+.DS_Store
+.git/
+.vscode/
