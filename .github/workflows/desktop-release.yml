@@ -65,5 +65,5 @@ jobs:
             - Windows installer built via GitHub Actions
             - Frontend exported as a static Tauri bundle
             - Ready for future auto-update support
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
