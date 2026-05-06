@@ -4,12 +4,13 @@ Database configuration and session management.
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
 from dotenv import load_dotenv
 
-load_dotenv()
+from runtime_config import get_database_url, get_env_file
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./smart_move.db")
+load_dotenv(get_env_file())
+
+DATABASE_URL = get_database_url()
 
 # SQLite specific connect args
 connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}

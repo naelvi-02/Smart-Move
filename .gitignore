@@ -1,5 +1,6 @@
 node_modules/
 .next/
+frontend/out/
 dist/
 build/
 .venv/
@@ -7,6 +8,9 @@ backend/venv/
 backend/.venv/
 backend/*.db
 backend/*.sqlite3
+smart_move.db
+src-tauri/target/
+src-tauri/binaries/
 __pycache__/
 .env
 .env.*

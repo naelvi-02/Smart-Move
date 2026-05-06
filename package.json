@@ -1,0 +1,23 @@
+{
+  "name": "smart-move-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "frontend:dev": "node scripts/run-frontend-dev.mjs",
+    "frontend:build": "node scripts/run-frontend-build.mjs",
+    "backend:build-sidecar": "python -m PyInstaller backend/desktop_server.py --name smart-move-backend --onefile --paths backend --distpath src-tauri/binaries --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import=runtime_config --hidden-import=models --hidden-import=routers.models --hidden-import=routers.benchmarks --hidden-import=routers.cost --hidden-import=adapters.openrouter --hidden-import=adapters.novita --hidden-import=adapters.civitai --hidden-import=services.benchmark --hidden-import=services.scoring",
+    "backend:prepare-sidecar": "npm run backend:build-sidecar && node scripts/rename-sidecar.mjs",
+    "desktop:cleanup-locks": "node scripts/cleanup-dev-locks.mjs",
+    "tauri": "tauri",
+    "dev": "npm run desktop:cleanup-locks && npm run backend:prepare-sidecar && tauri dev",
+    "build": "npm run backend:prepare-sidecar && tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

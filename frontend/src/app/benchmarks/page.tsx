@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Play,
@@ -25,6 +25,7 @@ type PriorityFilter = 'all' | 'nsfw' | 'coding' | 'popular' | 'unscored';
 
 const NSFW_KEYWORDS = ['dolphin', 'cydonia', 'venice', 'grok', 'abliterated', 'uncensor', 'nsfw', 'mistral-nemo'];
 const CODING_KEYWORDS = ['code', 'coder', 'codestral', 'deepseek', 'qwen2.5-coder', 'starcoder', 'wizard', 'magicoder'];
+const MODEL_SKELETON_KEYS = ['model-skeleton-1', 'model-skeleton-2', 'model-skeleton-3', 'model-skeleton-4', 'model-skeleton-5'];
 
 const ResultCard = ({ result, delay }: any) => {
     const getStatusConfig = (status: string) => {
@@ -86,11 +87,7 @@ export default function Benchmarks() {
     const [benchmarkTypes, setBenchmarkTypes] = useState<Array<{ id: string; type: string; language: string; description: string }>>([]);
     const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('nsfw');
 
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             setLoading(true);
             const [modelsData, resultsData, typesData] = await Promise.all([
@@ -106,7 +103,11 @@ export default function Benchmarks() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     // Smart filtering based on priority
     const filteredModels = useMemo(() => {
@@ -190,12 +191,14 @@ export default function Benchmarks() {
 
                 <div className="flex gap-3">
                     <button
+                        type="button"
                         onClick={updateScores}
                         className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-medium text-sm flex items-center gap-2 border border-white/5 transition-all"
                     >
                         <RotateCw size={16} /> Update Scores
                     </button>
                     <button
+                        type="button"
                         onClick={runBenchmarks}
                         disabled={selectedModels.length === 0 || running}
                         className="px-6 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -214,6 +217,7 @@ export default function Benchmarks() {
             >
                 {priorityTabs.map(({ value, label, icon: Icon, color, description }) => (
                     <button
+                        type="button"
                         key={value}
                         onClick={() => setPriorityFilter(value as PriorityFilter)}
                         className={cn(
@@ -253,6 +257,7 @@ export default function Benchmarks() {
                         {/* Quick Actions */}
                         <div className="flex gap-2 mb-4">
                             <button
+                                type="button"
                                 onClick={selectAll}
                                 className="flex-1 py-2 text-xs bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/20 transition-colors"
                             >
@@ -260,6 +265,7 @@ export default function Benchmarks() {
                             </button>
                             {selectedModels.length > 0 && (
                                 <button
+                                    type="button"
                                     onClick={() => setSelectedModels([])}
                                     className="flex-1 py-2 text-xs bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/20 transition-colors"
                                 >
@@ -270,7 +276,7 @@ export default function Benchmarks() {
 
                         <div className="h-[350px] overflow-y-auto pr-2 space-y-1 custom-scrollbar">
                             {loading ? (
-                                [...Array(5)].map((_, i) => <div key={i} className="h-10 bg-white/5 rounded-lg animate-pulse" />)
+                                MODEL_SKELETON_KEYS.map((key) => <div key={key} className="h-10 bg-white/5 rounded-lg animate-pulse" />)
                             ) : filteredModels.length === 0 ? (
                                 <div className="text-center py-10 text-slate-500">No models match this filter</div>
                             ) : (
@@ -306,8 +312,8 @@ export default function Benchmarks() {
                                                         {model.name || model.model_id}
                                                     </p>
                                                     <div className="flex gap-1 shrink-0">
-                                                        {isNsfw && <Flame size={12} className="text-rose-400" title="NSFW Capable" />}
-                                                        {isCoding && <Code size={12} className="text-emerald-400" title="Coding Model" />}
+                                                        {isNsfw && <Flame size={12} className="text-rose-400" aria-label="NSFW Capable" />}
+                                                        {isCoding && <Code size={12} className="text-emerald-400" aria-label="Coding Model" />}
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">

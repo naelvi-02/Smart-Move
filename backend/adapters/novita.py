@@ -27,6 +27,10 @@ async def fetch_image_models() -> List[Dict[str, Any]]:
     Fetch image checkpoint models using user's proven endpoint logic.
     Enriches with Civitai metadata when available for better classification.
     """
+    if not settings.novita_api_key or not settings.novita_api_key.strip():
+        print("Novita sync skipped: NOVITA_API_KEY is not configured.")
+        return []
+
     url = f"{settings.novita_base_url}/model" # Note: Singular 'model' as per user script
     headers = {}
     
@@ -38,9 +42,8 @@ async def fetch_image_models() -> List[Dict[str, Any]]:
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Increased limit to 50 pages (approx 5000 models) to ensure we get user's required models
-            # Many NSFW models are deep in the pagination
-            for page in range(50): 
+            # Keep desktop sync responsive; deeper harvests can use a dedicated script later.
+            for page in range(10): 
                 params = {
                     "filter.types": "checkpoint",
                     "pagination.limit": "100",

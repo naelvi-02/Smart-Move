@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Smart Move",
+  "version": "0.1.0",
+  "identifier": "com.naelvi.smartmove",
+  "build": {
+    "beforeDevCommand": "npm run frontend:dev",
+    "beforeBuildCommand": "npm run frontend:build",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../frontend/out"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Smart Move",
+        "width": 1440,
+        "height": 960,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MTU0QkREMDU1QkJGRTgKUldUb3Yxc0YzVXNWMWlnbFZRZDlqaWVOUDhnNmdkdUJZblA1NVkwM1c1WVZUUGtXYkIvL1U2MjUK",
+      "endpoints": ["https://github.com/naelvi-02/Smart-Move/releases/latest/download/latest.json"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/smart-move-backend"],
+    "targets": ["msi", "nsis"],
+    "icon": ["../frontend/src/app/favicon.ico"]
+  }
+}

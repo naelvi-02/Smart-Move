@@ -36,6 +36,14 @@ Smart Move is an advanced, internal research tool designed for analyzing, benchm
 - **Database**: SQLite (Local) / PostgreSQL (Production ready).
 - **APIs**: OpenRouter (LLM), Civitai (image), Novita AI (image only).
 
+## 🖥 Desktop App Build & Updates
+
+- The desktop shell uses **Tauri** so it stays lightweight on lower-end laptops.
+- GitHub Actions builds the Windows installer and publishes it as a GitHub Release.
+- The app includes an **update checker** that looks at GitHub Releases.
+- Signed auto-updates are planned through Tauri’s updater system.
+- To enable fully automatic in-app updates, you must generate and configure the Tauri signing keys.
+
 ## 🏁 Quick Start
 
 ### Prerequisites
@@ -72,6 +80,25 @@ DATABASE_URL=sqlite:///./smart_move.db
 ```
 
 > Note: `NOVITA_API_KEY` is used for image-model sync only.
+
+### 4. Desktop Build
+
+```bash
+npm install
+npm install --prefix frontend
+npm run build
+```
+
+For release builds, push a tag like `v0.1.1` and let GitHub Actions generate the Windows installer.
+
+### 5. GitHub Release Secrets
+
+Add these repository secrets before publishing desktop releases:
+
+- `TAURI_SIGNING_PRIVATE_KEY` = full contents of `C:\Users\Nopal\.tauri\smart-move.key`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = password you entered while generating the signing key
+
+The public key is already stored in `src-tauri/tauri.conf.json` for update verification.
 
 ## 🔒 Safety Protocols
 This tool is strictly for **research and metadata analysis**.

@@ -4,6 +4,8 @@ Configuration settings using Pydantic.
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+from runtime_config import get_env_file
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -22,7 +24,7 @@ class Settings(BaseSettings):
     civitai_base_url: str = "https://civitai.com/api/v1"
     
     class Config:
-        env_file = ".env"
+        env_file = str(get_env_file())
         env_file_encoding = "utf-8"
 
 

@@ -16,7 +16,10 @@ import {
   DollarSign,
   CheckCircle2,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Download,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import { modelsApi, ModelStats } from '@/lib/api';
 import { cn } from '@/lib/utils'; // Make sure you have this utility or use clsx directly
@@ -65,6 +68,9 @@ export default function Dashboard() {
   const [stats, setStats] = useState<ModelStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up_to_date' | 'installing' | 'error'>('idle');
+  const [updateMessage, setUpdateMessage] = useState('');
   const [syncStatus, setSyncStatus] = useState<Record<string, SyncState>>({
     openrouter: 'idle',
     civitai: 'idle',
@@ -93,6 +99,56 @@ export default function Dashboard() {
       console.error('Failed to load stats:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkForDesktopUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateStatus('checking');
+    setUpdateMessage('Checking GitHub Releases...');
+
+    try {
+      if (typeof window === 'undefined' || !(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+        setUpdateStatus('error');
+        setUpdateMessage('Desktop updater is only available inside the Tauri app.');
+        return;
+      }
+
+      const [{ check }, { relaunch }] = await Promise.all([
+        import('@tauri-apps/plugin-updater'),
+        import('@tauri-apps/plugin-process'),
+      ]);
+
+      const update = await check();
+
+      if (!update) {
+        setUpdateStatus('up_to_date');
+        setUpdateMessage('You are already on the latest version.');
+        return;
+      }
+
+      setUpdateStatus('available');
+      setUpdateMessage(`Found v${update.version}. Downloading update...`);
+
+      await update.downloadAndInstall(event => {
+        if (event.event === 'Started') {
+          setUpdateMessage(`Downloading ${event.data.contentLength} bytes...`);
+        }
+
+        if (event.event === 'Progress') {
+          setUpdateMessage(`Downloaded ${event.data.chunkLength} bytes...`);
+        }
+      });
+
+      setUpdateStatus('installing');
+      setUpdateMessage('Update installed. Restarting app...');
+      await relaunch();
+    } catch (error) {
+      console.error('Update check failed:', error);
+      setUpdateStatus('error');
+      setUpdateMessage('Auto-update is not ready yet. Open Releases to install manually.');
+    } finally {
+      setCheckingUpdate(false);
     }
   };
 
@@ -265,6 +321,40 @@ export default function Dashboard() {
               </div>
             );
           })}
+        </div>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="mb-6 glass-card rounded-2xl p-4 border border-white/5 flex items-center justify-between gap-4"
+      >
+        <div>
+          <p className="text-sm font-semibold text-white">App Updates</p>
+          <p className="text-xs text-slate-500">Check, download, and install the latest desktop update from GitHub Releases.</p>
+          <p className="text-xs text-slate-400 mt-1">{updateMessage || 'Ready to check for updates.'}</p>
+          <p className="text-[11px] uppercase tracking-widest text-slate-500 mt-2">Status: {updateStatus}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={checkForDesktopUpdate}
+            disabled={checkingUpdate}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-medium border border-white/5 hover:border-white/10 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {checkingUpdate ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {checkingUpdate ? 'Checking...' : 'Check Updates'}
+          </button>
+          <a
+            href="https://github.com/naelvi-02/Smart-Move/releases"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-medium border border-white/5 hover:border-white/10 transition-colors"
+          >
+            <ExternalLink className="w-4 h-4" />
+            Releases
+          </a>
         </div>
       </motion.div>
 

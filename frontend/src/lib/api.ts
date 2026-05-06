@@ -1,4 +1,54 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const DESKTOP_API_PORT = 18457;
+const DEFAULT_BROWSER_API_BASE_URL = 'http://localhost:8000';
+
+let desktopBackendReadyPromise: Promise<void> | null = null;
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  if (isTauriRuntime()) {
+    return `http://127.0.0.1:${DESKTOP_API_PORT}`;
+  }
+
+  return DEFAULT_BROWSER_API_BASE_URL;
+}
+
+async function waitForDesktopBackend(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  if (!desktopBackendReadyPromise) {
+    desktopBackendReadyPromise = (async () => {
+      const healthUrl = `http://127.0.0.1:${DESKTOP_API_PORT}/health`;
+
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        try {
+          const response = await fetch(healthUrl);
+          if (response.ok) {
+            return;
+          }
+        } catch {
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      throw new Error('Desktop backend failed to start in time.');
+    })().catch(error => {
+      desktopBackendReadyPromise = null;
+      throw error;
+    });
+  }
+
+  return desktopBackendReadyPromise;
+}
 
 export interface Model {
   id: string;
@@ -67,6 +117,18 @@ export interface CostSimulatorRequest {
   model_ids?: string[];
 }
 
+export interface ModelStats {
+  total_models: number;
+  by_type: { llm: number; image: number };
+  by_source: { openrouter: number; civitai: number; novita: number };
+  by_tier: { free: number; pro: number; admin: number };
+  nsfw_research?: {
+    vlm_models: number;
+    text_only_llm: number;
+    nsfw_capable: number;
+  };
+}
+
 export interface SyncResponse {
   source: string;
   models_synced: number;
@@ -75,16 +137,20 @@ export interface SyncResponse {
 }
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
+  await waitForDesktopBackend();
+
+  const url = `${getApiBaseUrl()}${endpoint}`;
   console.log(`📡 Fetching: ${url}`);
+
+  const headers = new Headers(options?.headers);
+  if (options?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
 
   try {
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
