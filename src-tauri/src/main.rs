@@ -8,6 +8,7 @@ use tauri_plugin_shell::{
 
 const BACKEND_SIDECAR_NAME: &str = "smart-move-backend";
 const BACKEND_PORT: &str = "18457";
+const REMOTE_API_URL: Option<&str> = option_env!("SMART_MOVE_REMOTE_API_URL");
 
 #[derive(Default)]
 struct BackendSidecar(Mutex<Option<CommandChild>>);
@@ -19,6 +20,13 @@ fn main() {
     .plugin(tauri_plugin_process::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
     .setup(|app| {
+      if let Some(remote_api_url) = REMOTE_API_URL {
+        if !remote_api_url.trim().is_empty() {
+          println!("[smart-move-backend] remote API mode enabled: {remote_api_url}");
+          return Ok(());
+        }
+      }
+
       let data_dir = app.path().app_data_dir()?;
       std::fs::create_dir_all(&data_dir)?;
 

@@ -44,6 +44,36 @@ Smart Move is an advanced, internal research tool designed for analyzing, benchm
 - Signed auto-updates are planned through Tauri’s updater system.
 - To enable fully automatic in-app updates, you must generate and configure the Tauri signing keys.
 
+## ☁️ VPS Production Mode
+
+For public/internal desktop distribution, do **not** bundle provider API keys into the Tauri app. Put them on your VPS instead.
+
+- Run the FastAPI backend on your VPS with your real provider secrets.
+- Point the desktop release to your VPS API URL at build time.
+- In VPS mode, the desktop app skips the local Python sidecar and talks directly to your server.
+
+Recommended production flow:
+
+1. Deploy `backend/` to your VPS.
+2. Set backend env vars on the VPS:
+
+```env
+OPENROUTER_API_KEY=your_key_here
+NOVITA_API_KEY=your_key_here
+CIVITAI_API_KEY=your_key_here
+DATABASE_URL=postgresql+psycopg://user:pass@host:5432/smart_move
+```
+
+3. Put your API behind HTTPS, for example `https://api.smartmove.yourdomain.com`.
+4. Add a GitHub repository variable named `SMART_MOVE_REMOTE_API_URL` with that HTTPS URL.
+5. Push a new desktop release tag. GitHub Actions will bake that URL into the desktop build.
+
+Notes:
+
+- Desktop dev still uses the local sidecar by default.
+- Desktop releases use the VPS URL only when `SMART_MOVE_REMOTE_API_URL` is set.
+- CORS already allows `tauri://localhost` and `https://tauri.localhost` for desktop webviews.
+
 ## 🏁 Quick Start
 
 ### Prerequisites
@@ -71,7 +101,7 @@ npm run dev
 ```
 
 ### 3. Environment Variables
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory for local backend development:
 ```env
 OPENROUTER_API_KEY=your_key_here
 NOVITA_API_KEY=your_key_here
@@ -99,6 +129,17 @@ Add these repository secrets before publishing desktop releases:
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = password you entered while generating the signing key
 
 The public key is already stored in `src-tauri/tauri.conf.json` for update verification.
+
+### 6. GitHub Release Variable For VPS Routing
+
+If you want desktop builds to call your VPS backend instead of the bundled local sidecar, add this repository variable:
+
+- `SMART_MOVE_REMOTE_API_URL` = `https://api.smartmove.yourdomain.com`
+
+When this variable is present during the GitHub Actions build:
+
+- the frontend uses the VPS URL inside the Tauri app
+- the Rust shell skips spawning the local Python backend sidecar
 
 ## 🔒 Safety Protocols
 This tool is strictly for **research and metadata analysis**.

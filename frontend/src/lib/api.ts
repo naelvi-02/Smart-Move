@@ -1,5 +1,6 @@
 const DESKTOP_API_PORT = 18457;
 const DEFAULT_BROWSER_API_BASE_URL = 'http://localhost:8000';
+const DESKTOP_REMOTE_API_BASE_URL = process.env.NEXT_PUBLIC_DESKTOP_API_URL;
 
 let desktopBackendReadyPromise: Promise<void> | null = null;
 
@@ -9,6 +10,10 @@ function isTauriRuntime(): boolean {
 
 function getApiBaseUrl(): string {
   if (isTauriRuntime()) {
+    if (DESKTOP_REMOTE_API_BASE_URL) {
+      return DESKTOP_REMOTE_API_BASE_URL;
+    }
+
     return `http://127.0.0.1:${DESKTOP_API_PORT}`;
   }
 
@@ -21,6 +26,10 @@ function getApiBaseUrl(): string {
 
 async function waitForDesktopBackend(): Promise<void> {
   if (!isTauriRuntime()) {
+    return;
+  }
+
+  if (DESKTOP_REMOTE_API_BASE_URL) {
     return;
   }
 

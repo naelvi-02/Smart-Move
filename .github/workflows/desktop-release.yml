@@ -1,5 +1,9 @@
 name: Desktop Release
 
+env:
+  SMART_MOVE_REMOTE_API_URL: ${{ vars.SMART_MOVE_REMOTE_API_URL }}
+  NEXT_PUBLIC_DESKTOP_API_URL: ${{ vars.SMART_MOVE_REMOTE_API_URL }}
+
 on:
   push:
     tags:
