@@ -32,6 +32,7 @@ struct DesktopApiResponse {
 
 #[tauri::command]
 async fn desktop_api_request(request: DesktopApiRequest) -> Result<DesktopApiResponse, String> {
+  println!("[smart-move-http] {} {}", request.method.as_deref().unwrap_or("GET"), request.url);
   let client = reqwest::Client::new();
   let method = request
     .method
@@ -56,6 +57,8 @@ async fn desktop_api_request(request: DesktopApiRequest) -> Result<DesktopApiRes
   let status = response.status().as_u16();
   let ok = response.status().is_success();
   let body = response.text().await.map_err(|error| error.to_string())?;
+
+  println!("[smart-move-http] <- {} {}", status, request.url);
 
   Ok(DesktopApiResponse { ok, status, body })
 }

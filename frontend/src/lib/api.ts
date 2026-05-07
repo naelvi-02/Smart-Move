@@ -205,6 +205,15 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
       throw new Error(`${error.message} @ ${url}`);
     }
 
+    if (typeof error === 'string') {
+      throw new Error(`${error} @ ${url}`);
+    }
+
+    try {
+      throw new Error(`${JSON.stringify(error)} @ ${url}`);
+    } catch {
+    }
+
     throw new Error(`Unknown fetch error @ ${url}`);
   }
 }
