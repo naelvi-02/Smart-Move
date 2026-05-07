@@ -22,6 +22,9 @@ import { benchmarksApi, modelsApi, Model, BenchmarkResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 type PriorityFilter = 'all' | 'nsfw' | 'coding' | 'popular' | 'unscored';
+const MAX_BENCHMARK_MODELS = 10;
+const DEFAULT_BENCHMARK_COUNT = 6;
+const EST_TOKENS_PER_BENCHMARK = 1800;
 
 const NSFW_KEYWORDS = ['dolphin', 'cydonia', 'venice', 'grok', 'abliterated', 'uncensor', 'nsfw', 'mistral-nemo'];
 const CODING_KEYWORDS = ['code', 'coder', 'codestral', 'deepseek', 'qwen2.5-coder', 'starcoder', 'wizard', 'magicoder'];
@@ -143,13 +146,27 @@ export default function Benchmarks() {
         setSelectedModels(prev =>
             prev.includes(modelId)
                 ? prev.filter(id => id !== modelId)
-                : [...prev, modelId]
+                : prev.length >= MAX_BENCHMARK_MODELS
+                    ? prev
+                    : [...prev, modelId]
         );
     };
 
     const selectAll = () => {
-        setSelectedModels(filteredModels.map(m => m.model_id));
+        setSelectedModels(filteredModels.slice(0, MAX_BENCHMARK_MODELS).map(m => m.model_id));
     };
+
+    const selectedModelObjects = useMemo(
+        () => models.filter(model => selectedModels.includes(model.model_id)),
+        [models, selectedModels]
+    );
+
+    const estimatedProbeCost = useMemo(() => {
+        return selectedModelObjects.reduce((total, model) => {
+            const unitPrice = model.effective_price_1m || 0;
+            return total + ((unitPrice * EST_TOKENS_PER_BENCHMARK * DEFAULT_BENCHMARK_COUNT) / 1_000_000);
+        }, 0);
+    }, [selectedModelObjects]);
 
     const runBenchmarks = async () => {
         if (selectedModels.length === 0) return;
@@ -207,6 +224,11 @@ export default function Benchmarks() {
                         Run Probe ({selectedModels.length})
                     </button>
                 </div>
+            </div>
+
+            <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-3">
+                <span>Select up to {MAX_BENCHMARK_MODELS} models per run. `Run Probe` sends real OpenRouter requests and uses credit.</span>
+                <span className="font-mono">Est. cost: ${estimatedProbeCost.toFixed(4)} / run</span>
             </div>
 
             {/* Priority Filter Tabs */}

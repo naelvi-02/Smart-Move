@@ -5,6 +5,7 @@ Endpoints for model listing, filtering, and syncing.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_
 from typing import List, Optional
 from database import get_db
 from models import Model
@@ -12,6 +13,31 @@ from schemas import ModelResponse, ModelFilter, SyncResponse, PaginatedModelResp
 from adapters import openrouter, novita, civitai
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+def apply_tier_filter(query, tier: str):
+    if tier == "free":
+        return query.filter(
+            or_(
+                Model.tier_recommendation == "free",
+                and_(Model.tier_recommendation.is_(None), Model.effective_price_1m <= 0.3),
+            )
+        )
+    if tier == "pro":
+        return query.filter(
+            or_(
+                Model.tier_recommendation == "pro",
+                and_(Model.tier_recommendation.is_(None), Model.effective_price_1m > 0.3, Model.effective_price_1m <= 0.7),
+            )
+        )
+    if tier == "admin":
+        return query.filter(
+            or_(
+                Model.tier_recommendation == "admin",
+                and_(Model.tier_recommendation.is_(None), Model.effective_price_1m > 0.7),
+            )
+        )
+    return query.filter(Model.tier_recommendation == tier)
 
 
 @router.get("/", response_model=List[ModelResponse])
@@ -53,7 +79,7 @@ async def list_models(
     if style_bucket:
         query = query.filter(Model.style_bucket == style_bucket)
     if tier:
-        query = query.filter(Model.tier_recommendation == tier)
+        query = apply_tier_filter(query, tier)
     if search:
         search_term = f"%{search}%"
         query = query.filter(
@@ -106,7 +132,7 @@ async def list_llm_models(
     if is_moderated is not None:
         query = query.filter(Model.is_moderated == is_moderated)
     if tier:
-        query = query.filter(Model.tier_recommendation == tier)
+        query = apply_tier_filter(query, tier)
     if search:
         search_term = f"%{search}%"
         query = query.filter(
@@ -163,7 +189,7 @@ async def list_image_models(
     # Get paginated results
     models = query.offset(skip).limit(limit).all()
     
-    return PaginatedModelResponse(models=models, total=total)
+    return {"models": models, "total": total}
 
 
 @router.get("/{model_id}", response_model=ModelResponse)

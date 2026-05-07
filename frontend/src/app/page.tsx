@@ -247,6 +247,18 @@ export default function Dashboard() {
           setSyncStatus(currentStatus);
           setSyncDetails(currentDetails);
           persistSyncState(true, currentStatus, currentDetails);
+
+          if (step.key === 'openrouter') {
+            try {
+              const scoreResult = await modelsApi.syncNsfwScores();
+              setDebugInfo(prev => ({
+                ...prev,
+                stats: `ok · scores updated ${scoreResult.updated}`,
+              }));
+            } catch (error) {
+              console.error('Failed to sync NSFW scores:', error);
+            }
+          }
         } catch (error) {
           currentStatus = { ...currentStatus, [step.key]: 'error' };
           currentDetails = {
@@ -258,16 +270,6 @@ export default function Dashboard() {
           persistSyncState(true, currentStatus, currentDetails);
           console.error(`Failed to sync ${step.label}:`, error);
         }
-      }
-
-      try {
-        const scoreResult = await modelsApi.syncNsfwScores();
-        setDebugInfo(prev => ({
-          ...prev,
-          stats: `ok · scores updated ${scoreResult.updated}`,
-        }));
-      } catch (error) {
-        console.error('Failed to sync NSFW scores:', error);
       }
 
       await loadStats();
