@@ -24,6 +24,10 @@ function getApiBaseUrl(): string {
   return DEFAULT_BROWSER_API_BASE_URL;
 }
 
+export function getResolvedApiBaseUrl(): string {
+  return getApiBaseUrl();
+}
+
 async function waitForDesktopBackend(): Promise<void> {
   if (!isTauriRuntime()) {
     return;
@@ -170,7 +174,11 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     return response.json();
   } catch (error) {
     console.error(`💥 Network/Fetch Error at ${url}:`, error);
-    throw error;
+    if (error instanceof Error) {
+      throw new Error(`${error.message} @ ${url}`);
+    }
+
+    throw new Error(`Unknown fetch error @ ${url}`);
   }
 }
 
@@ -207,6 +215,11 @@ export const modelsApi = {
     by_source: { openrouter: number; civitai: number; novita: number };
     by_tier: { free: number; pro: number; admin: number };
   }>('/api/models/stats/summary'),
+};
+
+export const debugApi = {
+  health: () => fetchApi<{ status: string }>('/health'),
+  baseUrl: () => getResolvedApiBaseUrl(),
 };
 
 // Benchmarks API
