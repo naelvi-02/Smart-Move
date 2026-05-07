@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -21,7 +21,7 @@ import {
   RefreshCw,
   ExternalLink
 } from 'lucide-react';
-import { modelsApi, ModelStats } from '@/lib/api';
+import { debugApi, modelsApi, ModelStats } from '@/lib/api';
 import { cn } from '@/lib/utils'; // Make sure you have this utility or use clsx directly
 
 // --- Components ---
@@ -71,6 +71,11 @@ export default function Dashboard() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up_to_date' | 'installing' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState('');
+  const [debugInfo, setDebugInfo] = useState({
+    apiBaseUrl: debugApi.baseUrl(),
+    health: 'pending',
+    stats: 'pending',
+  });
   const [syncStatus, setSyncStatus] = useState<Record<string, SyncState>>({
     openrouter: 'idle',
     civitai: 'idle',
@@ -87,20 +92,38 @@ export default function Dashboard() {
     ? Math.min(100, ((finishedSources + (activeSourceIndex >= 0 ? 0.5 : 0)) / totalSources) * 100)
     : (finishedSources / totalSources) * 100;
 
-  useEffect(() => {
-    loadStats();
+  const checkHealth = useCallback(async () => {
+    try {
+      const result = await debugApi.health();
+      setDebugInfo(prev => ({ ...prev, health: result.status }));
+    } catch (error) {
+      setDebugInfo(prev => ({
+        ...prev,
+        health: error instanceof Error ? error.message : 'failed',
+      }));
+    }
   }, []);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const data = await modelsApi.getStats();
       setStats(data);
+      setDebugInfo(prev => ({ ...prev, stats: 'ok' }));
     } catch (err) {
       console.error('Failed to load stats:', err);
+      setDebugInfo(prev => ({
+        ...prev,
+        stats: err instanceof Error ? err.message : 'failed',
+      }));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    checkHealth();
+    loadStats();
+  }, [checkHealth, loadStats]);
 
   const checkForDesktopUpdate = async () => {
     setCheckingUpdate(true);
@@ -177,7 +200,7 @@ export default function Dashboard() {
           setSyncStatus(prev => ({ ...prev, [step.key]: 'error' }));
           setSyncDetails(prev => ({
             ...prev,
-            [step.key]: 'Sync failed',
+            [step.key]: error instanceof Error ? error.message : 'Sync failed',
           }));
           console.error(`Failed to sync ${step.label}:`, error);
         }
@@ -253,6 +276,12 @@ export default function Dashboard() {
               className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-500"
             />
           </div>
+        </div>
+
+        <div className="mb-4 rounded-xl bg-black/20 border border-white/5 px-4 py-3 text-xs text-slate-400 space-y-1">
+          <p><span className="text-slate-500">API:</span> {debugInfo.apiBaseUrl}</p>
+          <p><span className="text-slate-500">Health:</span> {debugInfo.health}</p>
+          <p><span className="text-slate-500">Stats:</span> {debugInfo.stats}</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
