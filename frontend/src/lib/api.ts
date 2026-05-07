@@ -245,6 +245,8 @@ export const modelsApi = {
 
   syncNovita: () => fetchApi<SyncResponse>('/api/models/sync/novita', { method: 'POST' }),
 
+  syncNsfwScores: () => fetchApi<{ updated: number; vlm_detected: number; high_nsfw_score: number; high_indonesian_score: number }>('/api/models/sync/nsfw-scores', { method: 'POST' }),
+
   getStats: () => fetchApi<{
     total_models: number;
     by_type: { llm: number; image: number };

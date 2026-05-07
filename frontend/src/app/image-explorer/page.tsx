@@ -38,7 +38,7 @@ export default function ImageExplorer() {
     const [source, setSource] = useState('');
     const [styleBucket, setStyleBucket] = useState('');
     const [sortBy, setSortBy] = useState('popular');
-    const [availableOnly, setAvailableOnly] = useState(true);
+    const [availableOnly, setAvailableOnly] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalModels, setTotalModels] = useState(0);
     const [expandedModel, setExpandedModel] = useState<string | null>(null);

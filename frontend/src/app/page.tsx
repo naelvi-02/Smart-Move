@@ -57,6 +57,7 @@ const BentoCard = ({ children, className, delay }: any) => (
 );
 
 type SyncState = 'idle' | 'syncing' | 'success' | 'error';
+const DASHBOARD_SYNC_STORAGE_KEY = 'smart-move-dashboard-sync';
 
 const SYNC_SOURCES = [
   { key: 'openrouter', label: 'OpenRouter', accent: 'text-indigo-400' },
@@ -92,6 +93,19 @@ export default function Dashboard() {
     ? Math.min(100, ((finishedSources + (activeSourceIndex >= 0 ? 0.5 : 0)) / totalSources) * 100)
     : (finishedSources / totalSources) * 100;
 
+  const persistSyncState = useCallback((nextSyncing: boolean, nextStatus: Record<string, SyncState>, nextDetails: Record<string, string>) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(DASHBOARD_SYNC_STORAGE_KEY, JSON.stringify({
+      syncing: nextSyncing,
+      syncStatus: nextStatus,
+      syncDetails: nextDetails,
+      updatedAt: Date.now(),
+    }));
+  }, []);
+
   const checkHealth = useCallback(async () => {
     try {
       const result = await debugApi.health();
@@ -121,6 +135,33 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem(DASHBOARD_SYNC_STORAGE_KEY);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as {
+            syncing?: boolean;
+            syncStatus?: Record<string, SyncState>;
+            syncDetails?: Record<string, string>;
+            updatedAt?: number;
+          };
+
+          if (parsed.syncStatus) {
+            setSyncStatus(parsed.syncStatus);
+          }
+
+          if (parsed.syncDetails) {
+            setSyncDetails(parsed.syncDetails);
+          }
+
+          if (parsed.syncing && parsed.updatedAt && Date.now() - parsed.updatedAt < 15 * 60 * 1000) {
+            setSyncing(true);
+          }
+        } catch {
+        }
+      }
+    }
+
     checkHealth();
     loadStats();
   }, [checkHealth, loadStats]);
@@ -176,10 +217,14 @@ export default function Dashboard() {
   };
 
   const syncAll = async () => {
+    let currentStatus = { openrouter: 'idle', civitai: 'idle', novita: 'idle' } as Record<string, SyncState>;
+    let currentDetails = {} as Record<string, string>;
+
     try {
       setSyncing(true);
-      setSyncStatus({ openrouter: 'idle', civitai: 'idle', novita: 'idle' });
-      setSyncDetails({});
+      setSyncStatus(currentStatus);
+      setSyncDetails(currentDetails);
+      persistSyncState(true, currentStatus, currentDetails);
 
       const steps = [
         { key: 'openrouter', label: 'OpenRouter', run: modelsApi.syncOpenRouter },
@@ -188,22 +233,41 @@ export default function Dashboard() {
       ] as const;
 
       for (const step of steps) {
-        setSyncStatus(prev => ({ ...prev, [step.key]: 'syncing' }));
+        currentStatus = { ...currentStatus, [step.key]: 'syncing' };
+        setSyncStatus(currentStatus);
+        persistSyncState(true, currentStatus, currentDetails);
+
         try {
           const result = await step.run();
-          setSyncStatus(prev => ({ ...prev, [step.key]: 'success' }));
-          setSyncDetails(prev => ({
-            ...prev,
+          currentStatus = { ...currentStatus, [step.key]: 'success' };
+          currentDetails = {
+            ...currentDetails,
             [step.key]: `${result.models_synced} new, ${result.models_updated} updated`,
-          }));
+          };
+          setSyncStatus(currentStatus);
+          setSyncDetails(currentDetails);
+          persistSyncState(true, currentStatus, currentDetails);
         } catch (error) {
-          setSyncStatus(prev => ({ ...prev, [step.key]: 'error' }));
-          setSyncDetails(prev => ({
-            ...prev,
+          currentStatus = { ...currentStatus, [step.key]: 'error' };
+          currentDetails = {
+            ...currentDetails,
             [step.key]: error instanceof Error ? error.message : 'Sync failed',
-          }));
+          };
+          setSyncStatus(currentStatus);
+          setSyncDetails(currentDetails);
+          persistSyncState(true, currentStatus, currentDetails);
           console.error(`Failed to sync ${step.label}:`, error);
         }
+      }
+
+      try {
+        const scoreResult = await modelsApi.syncNsfwScores();
+        setDebugInfo(prev => ({
+          ...prev,
+          stats: `ok · scores updated ${scoreResult.updated}`,
+        }));
+      } catch (error) {
+        console.error('Failed to sync NSFW scores:', error);
       }
 
       await loadStats();
@@ -211,6 +275,7 @@ export default function Dashboard() {
       console.error('Failed to sync:', err);
     } finally {
       setSyncing(false);
+      persistSyncState(false, currentStatus, currentDetails);
     }
   };
 
