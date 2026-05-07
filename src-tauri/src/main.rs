@@ -36,13 +36,21 @@ async fn desktop_api_request(request: DesktopApiRequest) -> Result<DesktopApiRes
   let client = reqwest::Client::builder()
     .danger_accept_invalid_certs(true)
     .build()
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| {
+      let message = format!("client build failed: {error:?}");
+      eprintln!("[smart-move-http] {message}");
+      message
+    })?;
   let method = request
     .method
     .as_deref()
     .unwrap_or("GET")
     .parse::<Method>()
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| {
+      let message = format!("method parse failed: {error:?}");
+      eprintln!("[smart-move-http] {message}");
+      message
+    })?;
 
   let mut builder = client.request(method, &request.url);
 
@@ -56,10 +64,18 @@ async fn desktop_api_request(request: DesktopApiRequest) -> Result<DesktopApiRes
     builder = builder.body(body);
   }
 
-  let response = builder.send().await.map_err(|error| error.to_string())?;
+  let response = builder.send().await.map_err(|error| {
+    let message = format!("request send failed: {error:?}");
+    eprintln!("[smart-move-http] {message}");
+    message
+  })?;
   let status = response.status().as_u16();
   let ok = response.status().is_success();
-  let body = response.text().await.map_err(|error| error.to_string())?;
+  let body = response.text().await.map_err(|error| {
+    let message = format!("response read failed: {error:?}");
+    eprintln!("[smart-move-http] {message}");
+    message
+  })?;
 
   println!("[smart-move-http] <- {} {}", status, request.url);
 
