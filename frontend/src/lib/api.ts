@@ -1,6 +1,6 @@
 const DESKTOP_API_PORT = 18457;
 const DEFAULT_BROWSER_API_BASE_URL = 'http://localhost:8000';
-const DESKTOP_REMOTE_API_BASE_URL = process.env.NEXT_PUBLIC_DESKTOP_API_URL;
+const DESKTOP_REMOTE_API_BASE_URL = process.env.NEXT_PUBLIC_DESKTOP_API_URL || process.env.NEXT_PUBLIC_API_URL;
 
 let desktopBackendReadyPromise: Promise<void> | null = null;
 
