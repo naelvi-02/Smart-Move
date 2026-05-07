@@ -68,6 +68,8 @@ DATABASE_URL=postgresql+psycopg://user:pass@host:5432/smart_move
 4. Add a GitHub repository variable named `SMART_MOVE_REMOTE_API_URL` with that HTTPS URL.
 5. Push a new desktop release tag. GitHub Actions will bake that URL into the desktop build.
 
+Full AWS VPS notes: `docs/aws-vps-deploy.md`
+
 Notes:
 
 - Desktop dev still uses the local sidecar by default.

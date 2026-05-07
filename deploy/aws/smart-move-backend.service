@@ -1,0 +1,16 @@
+[Unit]
+Description=Smart Move FastAPI backend
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/smart-move/backend
+EnvironmentFile=/opt/smart-move/backend/.env
+ExecStart=/opt/smart-move/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
