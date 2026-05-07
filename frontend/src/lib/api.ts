@@ -150,7 +150,11 @@ export interface SyncResponse {
 }
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  await waitForDesktopBackend();
+  const tauriRuntime = isTauriRuntime();
+
+  if (!DESKTOP_REMOTE_API_BASE_URL) {
+    await waitForDesktopBackend();
+  }
 
   const url = `${getApiBaseUrl()}${endpoint}`;
   console.log(`📡 Fetching: ${url}`);
@@ -161,10 +165,33 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   }
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    const response = tauriRuntime
+      ? await (async () => {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const result = await invoke<{ ok: boolean; status: number; body: string }>('desktop_api_request', {
+            request: {
+              url,
+              method: options?.method,
+              headers: Object.fromEntries(headers.entries()),
+              body: typeof options?.body === 'string' ? options.body : undefined,
+            },
+          });
+
+          return {
+            ok: result.ok,
+            status: result.status,
+            async json() {
+              return JSON.parse(result.body);
+            },
+            async text() {
+              return result.body;
+            },
+          };
+        })()
+      : await fetch(url, {
+          ...options,
+          headers,
+        });
 
     if (!response.ok) {
       console.error(`❌ API Error ${response.status} at ${url}:`, await response.text());
