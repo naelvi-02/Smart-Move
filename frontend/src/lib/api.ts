@@ -8,12 +8,12 @@ function isTauriRuntime(): boolean {
 }
 
 function getApiBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-
   if (isTauriRuntime()) {
     return `http://127.0.0.1:${DESKTOP_API_PORT}`;
+  }
+
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
   }
 
   return DEFAULT_BROWSER_API_BASE_URL;
