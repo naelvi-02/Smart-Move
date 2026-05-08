@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     Search,
@@ -18,6 +18,7 @@ import { modelsApi, Model } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 type SourceFilter = 'all' | 'openrouter' | 'novita';
+const LLM_SKELETON_KEYS = ['llm-skeleton-1', 'llm-skeleton-2', 'llm-skeleton-3', 'llm-skeleton-4', 'llm-skeleton-5', 'llm-skeleton-6'];
 
 export default function LlmExplorer() {
     const [models, setModels] = useState<Model[]>([]);
@@ -34,23 +35,28 @@ export default function LlmExplorer() {
     const [textOnly, setTextOnly] = useState(true); // Default: exclude VLMs
     const [minNsfwScore, setMinNsfwScore] = useState('');
 
-    useEffect(() => {
-        loadModels();
-    }, [sourceFilter, minContext, maxPrice, moderation, tier, search, textOnly, minNsfwScore]);
-
-    const loadModels = async () => {
+    const loadModels = useCallback(async () => {
         try {
             setLoading(true);
             const params: Record<string, string> = { type: 'llm' };
             if (sourceFilter !== 'all') params.source = sourceFilter;
             if (minContext) params.min_context_length = minContext;
-            if (maxPrice) params.max_price_1m = maxPrice;
             if (moderation) params.is_moderated = moderation;
-            if (tier) params.tier = tier;
             if (search) params.search = search;
             // NSFW Research filters
             if (textOnly) params.is_vlm = 'false'; // Exclude VLMs
             if (minNsfwScore) params.min_nsfw_score = minNsfwScore;
+
+            if (tier === 'free') {
+                params.max_price_1m = '0.3';
+            } else if (tier === 'pro') {
+                params.min_price_1m = '0.3';
+                params.max_price_1m = '0.7';
+            } else if (tier === 'admin') {
+                params.min_price_1m = '0.7';
+            } else if (maxPrice) {
+                params.max_price_1m = maxPrice;
+            }
 
             const data = await modelsApi.listLlm(params);
             setModels(data);
@@ -59,7 +65,11 @@ export default function LlmExplorer() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [sourceFilter, minContext, maxPrice, moderation, tier, search, textOnly, minNsfwScore]);
+
+    useEffect(() => {
+        loadModels();
+    }, [loadModels]);
 
     const formatPrice = (price: number | null) => {
         if (price === null || price === undefined) return '-';
@@ -142,6 +152,7 @@ export default function LlmExplorer() {
                     { value: 'novita', label: 'Novita AI', icon: Cpu },
                 ].map(({ value, label, icon: Icon }) => (
                     <button
+                        type="button"
                         key={value}
                         onClick={() => setSourceFilter(value as SourceFilter)}
                         className={cn(
@@ -159,6 +170,7 @@ export default function LlmExplorer() {
                 {/* Text Only Toggle */}
                 <div className="ml-auto flex items-center gap-2">
                     <button
+                        type="button"
                         onClick={() => setTextOnly(!textOnly)}
                         className={cn(
                             "px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-all border",
@@ -275,8 +287,8 @@ export default function LlmExplorer() {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {loading ? (
-                                [...Array(6)].map((_, i) => (
-                                    <tr key={i} className="animate-pulse">
+                                LLM_SKELETON_KEYS.map((key) => (
+                                    <tr key={key} className="animate-pulse">
                                         <td className="p-4 pl-6"><div className="h-6 w-48 bg-white/5 rounded" /></td>
                                         <td className="p-4"><div className="h-6 w-16 bg-white/5 rounded mx-auto" /></td>
                                         <td className="p-4"><div className="h-6 w-20 bg-white/5 rounded mx-auto" /></td>

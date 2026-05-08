@@ -101,6 +101,7 @@ async def list_models(
 async def list_llm_models(
     source: Optional[str] = Query(None, description="openrouter or novita"),
     min_context_length: Optional[int] = Query(None),
+    min_price_1m: Optional[float] = Query(None),
     max_price_1m: Optional[float] = Query(None),
     is_moderated: Optional[bool] = Query(None),
     tier: Optional[str] = Query(None),
@@ -127,6 +128,8 @@ async def list_llm_models(
         query = query.filter(Model.source == source)
     if min_context_length:
         query = query.filter(Model.context_length >= min_context_length)
+    if min_price_1m is not None:
+        query = query.filter(Model.effective_price_1m >= min_price_1m)
     if max_price_1m is not None:
         query = query.filter(Model.effective_price_1m <= max_price_1m)
     if is_moderated is not None:
