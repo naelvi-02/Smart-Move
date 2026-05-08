@@ -142,7 +142,10 @@ async def list_llm_models(
     
     # NSFW Research filters
     if is_vlm is not None:
-        query = query.filter(Model.is_vlm == is_vlm)
+        if is_vlm:
+            query = query.filter(Model.is_vlm == True)
+        else:
+            query = query.filter(or_(Model.is_vlm == False, Model.is_vlm.is_(None)))
     if min_nsfw_score is not None:
         query = query.filter(Model.nsfw_score >= min_nsfw_score)
     if min_indonesian_score is not None:
