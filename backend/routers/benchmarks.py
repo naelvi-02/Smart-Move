@@ -150,6 +150,9 @@ async def run_benchmark_job(
                     await asyncio.sleep(15)
                     result = await benchmark_service.run_benchmark(model_id, bench_type)
                     logger.info(f"Retry result: status={result.get('status')}, score={result.get('score')}")
+
+                if result.get("status") != "success":
+                    JOB_STATUS[job_id]["last_error"] = result.get("error") or result.get("notes") or result.get("status")
                 
                 # Store result
                 db_result = BenchmarkResult(
@@ -201,7 +204,7 @@ async def run_benchmark_job(
             logger.error(f"Error updating metrics for {model_id}: {e}")
             JOB_STATUS[job_id]["last_error"] = str(e)
 
-    JOB_STATUS[job_id]["status"] = "completed"
+    JOB_STATUS[job_id]["status"] = "completed_with_errors" if JOB_STATUS[job_id]["last_error"] else "completed"
     JOB_STATUS[job_id]["current_model"] = None
     JOB_STATUS[job_id]["current_benchmark"] = None
     JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()

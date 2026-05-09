@@ -216,7 +216,7 @@ export default function Benchmarks() {
                 const job = await benchmarksApi.getJob(activeJob.job_id);
                 setActiveJob(job);
                 await loadData('refresh');
-                if (job.status === 'completed' || job.status === 'failed') {
+                if (job.status === 'completed' || job.status === 'completed_with_errors' || job.status === 'failed') {
                     setRunning(false);
                 }
             } catch (error) {
