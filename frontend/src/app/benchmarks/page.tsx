@@ -86,15 +86,21 @@ export default function Benchmarks() {
     const [results, setResults] = useState<BenchmarkResult[]>([]);
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [running, setRunning] = useState(false);
+    const [updatingScores, setUpdatingScores] = useState(false);
     const [activeJob, setActiveJob] = useState<BenchmarkJobStatus | null>(null);
     const [benchmarkTypes, setBenchmarkTypes] = useState<Array<{ id: string; type: string; language: string; description: string }>>([]);
-    const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('nsfw');
+    const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
     const [search, setSearch] = useState('');
 
-    const loadData = useCallback(async () => {
+    const loadData = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         try {
-            setLoading(true);
+            if (mode === 'initial') {
+                setLoading(true);
+            } else {
+                setRefreshing(true);
+            }
             const [modelsData, resultsData, typesData] = await Promise.all([
                 modelsApi.listLlm({ limit: '500' }),
                 benchmarksApi.list({ limit: '100' }),
@@ -107,11 +113,12 @@ export default function Benchmarks() {
             console.error('Failed to load data:', err);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     }, []);
 
     useEffect(() => {
-        loadData();
+        loadData('initial');
     }, [loadData]);
 
     // Smart filtering based on priority
@@ -208,7 +215,7 @@ export default function Benchmarks() {
             try {
                 const job = await benchmarksApi.getJob(activeJob.job_id);
                 setActiveJob(job);
-                await loadData();
+                await loadData('refresh');
                 if (job.status === 'completed' || job.status === 'failed') {
                     setRunning(false);
                 }
@@ -223,10 +230,13 @@ export default function Benchmarks() {
 
     const updateScores = async () => {
         try {
+            setUpdatingScores(true);
             await benchmarksApi.updateScores();
-            await loadData();
+            await loadData('refresh');
         } catch (err) {
             console.error('Failed to update scores:', err);
+        } finally {
+            setUpdatingScores(false);
         }
     };
 
@@ -250,9 +260,10 @@ export default function Benchmarks() {
                     <button
                         type="button"
                         onClick={updateScores}
+                        disabled={updatingScores}
                         className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-medium text-sm flex items-center gap-2 border border-white/5 transition-all"
                     >
-                        <RotateCw size={16} /> Update Scores
+                        {updatingScores ? <RotateCw className="animate-spin" size={16} /> : <RotateCw size={16} />} Update Scores
                     </button>
                     <button
                         type="button"
@@ -279,6 +290,12 @@ export default function Benchmarks() {
                         {activeJob.current_benchmark ? ` / ${activeJob.current_benchmark}` : ''}
                     </span>
                     {activeJob.last_error && <span className="text-rose-300">Last error: {activeJob.last_error}</span>}
+                </div>
+            )}
+
+            {refreshing && !loading && (
+                <div className="mb-6 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-200">
+                    Refreshing benchmark data...
                 </div>
             )}
 
@@ -361,7 +378,19 @@ export default function Benchmarks() {
                             {loading ? (
                                 MODEL_SKELETON_KEYS.map((key) => <div key={key} className="h-10 bg-white/5 rounded-lg animate-pulse" />)
                             ) : filteredModels.length === 0 ? (
-                                <div className="text-center py-10 text-slate-500">No models match this filter</div>
+                                <div className="text-center py-10 text-slate-500 space-y-3">
+                                    <p>No models match this filter.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPriorityFilter('all');
+                                            setSearch('');
+                                        }}
+                                        className="px-3 py-2 text-xs bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg border border-white/10"
+                                    >
+                                        Reset benchmark filters
+                                    </button>
+                                </div>
                             ) : (
                                 filteredModels.map((model) => {
                                     const idLower = (model.model_id || '').toLowerCase();
