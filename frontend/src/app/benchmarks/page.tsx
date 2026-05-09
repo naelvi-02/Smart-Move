@@ -18,7 +18,7 @@ import {
     TrendingUp,
     AlertCircle
 } from 'lucide-react';
-import { benchmarksApi, modelsApi, Model, BenchmarkResult } from '@/lib/api';
+import { benchmarksApi, modelsApi, Model, BenchmarkJobStatus, BenchmarkResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 type PriorityFilter = 'all' | 'nsfw' | 'coding' | 'popular' | 'unscored';
@@ -87,14 +87,16 @@ export default function Benchmarks() {
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [running, setRunning] = useState(false);
+    const [activeJob, setActiveJob] = useState<BenchmarkJobStatus | null>(null);
     const [benchmarkTypes, setBenchmarkTypes] = useState<Array<{ id: string; type: string; language: string; description: string }>>([]);
     const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('nsfw');
+    const [search, setSearch] = useState('');
 
     const loadData = useCallback(async () => {
         try {
             setLoading(true);
             const [modelsData, resultsData, typesData] = await Promise.all([
-                modelsApi.listLlm({ limit: '200' }),
+                modelsApi.listLlm({ limit: '500' }),
                 benchmarksApi.list({ limit: '100' }),
                 benchmarksApi.getTypes(),
             ]);
@@ -121,10 +123,17 @@ export default function Benchmarks() {
             const nameLower = (model.name || '').toLowerCase();
             const combined = idLower + ' ' + nameLower;
 
+            if (search) {
+                const searchTerm = search.toLowerCase();
+                if (!combined.includes(searchTerm) && !(model.provider || '').toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+            }
+
             switch (priorityFilter) {
                 case 'nsfw':
                     // NSFW/Unfiltered models (Dolphin, Cydonia, Venice, Grok, etc.)
-                    return NSFW_KEYWORDS.some(kw => combined.includes(kw)) || model.is_moderated === false;
+                    return NSFW_KEYWORDS.some(kw => combined.includes(kw)) || model.is_moderated === false || (model.nsfw_score || 0) >= 40;
                 case 'coding':
                     // Coding-focused models
                     return CODING_KEYWORDS.some(kw => combined.includes(kw));
@@ -140,7 +149,7 @@ export default function Benchmarks() {
                     return true;
             }
         });
-    }, [models, results, priorityFilter]);
+    }, [models, results, priorityFilter, search]);
 
     const toggleModel = (modelId: string) => {
         setSelectedModels(prev =>
@@ -172,14 +181,45 @@ export default function Benchmarks() {
         if (selectedModels.length === 0) return;
         try {
             setRunning(true);
-            await benchmarksApi.run(selectedModels);
-            setTimeout(loadData, 2000);
+            const job = await benchmarksApi.run(selectedModels);
+            setActiveJob({
+                job_id: job.job_id,
+                status: job.status,
+                model_ids: job.models,
+                benchmark_types: job.benchmark_types,
+                current_model: null,
+                current_benchmark: null,
+                completed_models: 0,
+                total_models: job.models.length,
+                completed_benchmarks: 0,
+                total_benchmarks: job.models.length * job.benchmark_types.length,
+                last_error: null,
+                updated_at: new Date().toISOString(),
+            });
         } catch (err) {
             console.error('Failed to run benchmarks:', err);
-        } finally {
-            setRunning(false);
         }
     };
+
+    useEffect(() => {
+        if (!activeJob?.job_id || !running) return;
+
+        const interval = window.setInterval(async () => {
+            try {
+                const job = await benchmarksApi.getJob(activeJob.job_id);
+                setActiveJob(job);
+                await loadData();
+                if (job.status === 'completed' || job.status === 'failed') {
+                    setRunning(false);
+                }
+            } catch (error) {
+                console.error('Failed to poll benchmark job:', error);
+                setRunning(false);
+            }
+        }, 5000);
+
+        return () => window.clearInterval(interval);
+    }, [activeJob?.job_id, running, loadData]);
 
     const updateScores = async () => {
         try {
@@ -231,6 +271,17 @@ export default function Benchmarks() {
                 <span className="font-mono">Est. cost: ${estimatedProbeCost.toFixed(4)} / run</span>
             </div>
 
+            {activeJob && (
+                <div className="mb-6 rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-200 flex flex-wrap items-center justify-between gap-3">
+                    <span>
+                        Job {activeJob.status}: {activeJob.completed_models}/{activeJob.total_models} models, {activeJob.completed_benchmarks}/{activeJob.total_benchmarks} probes.
+                        {activeJob.current_model ? ` Running ${activeJob.current_model}` : ''}
+                        {activeJob.current_benchmark ? ` / ${activeJob.current_benchmark}` : ''}
+                    </span>
+                    {activeJob.last_error && <span className="text-rose-300">Last error: {activeJob.last_error}</span>}
+                </div>
+            )}
+
             {/* Priority Filter Tabs */}
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -274,6 +325,16 @@ export default function Benchmarks() {
                                 <ListChecks className="text-indigo-400" size={20} /> Target Models
                             </h3>
                             <span className="text-xs text-slate-500 font-mono">{filteredModels.length} found</span>
+                        </div>
+
+                        <div className="mb-4">
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Search benchmark models..."
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                            />
                         </div>
 
                         {/* Quick Actions */}
@@ -330,7 +391,7 @@ export default function Benchmarks() {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-center gap-2">
-                                                    <p className={cn("text-sm font-medium truncate", selectedModels.includes(model.model_id) ? "text-white" : "text-slate-300")}>
+                                                    <p className={cn("text-sm font-medium break-words", selectedModels.includes(model.model_id) ? "text-white" : "text-slate-300")}>
                                                         {model.name || model.model_id}
                                                     </p>
                                                     <div className="flex gap-1 shrink-0">

@@ -121,6 +121,21 @@ export interface BenchmarkResult {
   created_at: string | null;
 }
 
+export interface BenchmarkJobStatus {
+  job_id: string;
+  status: string;
+  model_ids: string[];
+  benchmark_types: string[];
+  current_model: string | null;
+  current_benchmark: string | null;
+  completed_models: number;
+  total_models: number;
+  completed_benchmarks: number;
+  total_benchmarks: number;
+  last_error: string | null;
+  updated_at: string;
+}
+
 export interface CostSimulatorRequest {
   avg_input_tokens: number;
   avg_output_tokens: number;
@@ -270,10 +285,12 @@ export const benchmarksApi = {
   getTypes: () => fetchApi<Array<{ id: string; type: string; language: string; description: string }>>('/api/benchmarks/types'),
 
   run: (modelIds: string[], benchmarkTypes?: string[]) =>
-    fetchApi<{ job_id: string; status: string }>('/api/benchmarks/run', {
+    fetchApi<{ job_id: string; status: string; models: string[]; benchmark_types: string[]; message: string }>('/api/benchmarks/run', {
       method: 'POST',
       body: JSON.stringify({ model_ids: modelIds, benchmark_types: benchmarkTypes }),
     }),
+
+  getJob: (jobId: string) => fetchApi<BenchmarkJobStatus>(`/api/benchmarks/jobs/${encodeURIComponent(jobId)}`),
 
   getModelBenchmarks: (modelId: string) =>
     fetchApi<{ model_id: string; total_benchmarks: number; by_type: Record<string, unknown[]> }>(

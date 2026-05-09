@@ -6,6 +6,7 @@ Endpoints for running and viewing benchmark results.
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
 from database import get_db
 from models import Model, ModelMetric, BenchmarkResult
 from schemas import BenchmarkRequest, BenchmarkResultResponse
@@ -14,6 +15,7 @@ from services import scoring
 import uuid
 
 router = APIRouter(prefix="/api/benchmarks", tags=["benchmarks"])
+JOB_STATUS = {}
 
 
 @router.get("/types")
@@ -76,6 +78,20 @@ async def run_benchmarks(
     
     # Queue background task
     job_id = str(uuid.uuid4())
+    JOB_STATUS[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "model_ids": valid_models,
+        "benchmark_types": benchmark_types,
+        "current_model": None,
+        "current_benchmark": None,
+        "completed_models": 0,
+        "total_models": len(valid_models),
+        "completed_benchmarks": 0,
+        "total_benchmarks": len(valid_models) * len(benchmark_types),
+        "last_error": None,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
     background_tasks.add_task(
         run_benchmark_job,
         job_id=job_id,
@@ -108,10 +124,14 @@ async def run_benchmark_job(
     logger = logging.getLogger("benchmark_job")
     
     logger.info(f"Starting benchmark job {job_id} for models: {model_ids}")
+    JOB_STATUS[job_id]["status"] = "running"
     
     for model_id in model_ids:
         for i, bench_type in enumerate(benchmark_types):
             try:
+                JOB_STATUS[job_id]["current_model"] = model_id
+                JOB_STATUS[job_id]["current_benchmark"] = bench_type
+                JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
                 # Add delay between requests to avoid rate limiting (8 seconds for free models)
                 if i > 0:
                     logger.info("Waiting 8 seconds to avoid rate limit...")
@@ -146,6 +166,8 @@ async def run_benchmark_job(
                 )
                 db.add(db_result)
                 db.commit()
+                JOB_STATUS[job_id]["completed_benchmarks"] += 1
+                JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
                 
             except Exception as e:
                 # Log error and save to database
@@ -161,10 +183,15 @@ async def run_benchmark_job(
                 )
                 db.add(db_result)
                 db.commit()
+                JOB_STATUS[job_id]["last_error"] = str(e)
+                JOB_STATUS[job_id]["completed_benchmarks"] += 1
+                JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
         
         # Wait between models too
         logger.info("Waiting 10 seconds before next model...")
         await asyncio.sleep(10)
+        JOB_STATUS[job_id]["completed_models"] += 1
+        JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
         
         # Update model metrics after all benchmarks for this model
         try:
@@ -172,6 +199,20 @@ async def run_benchmark_job(
             scoring.update_model_scores(db, model_id)
         except Exception as e:
             logger.error(f"Error updating metrics for {model_id}: {e}")
+            JOB_STATUS[job_id]["last_error"] = str(e)
+
+    JOB_STATUS[job_id]["status"] = "completed"
+    JOB_STATUS[job_id]["current_model"] = None
+    JOB_STATUS[job_id]["current_benchmark"] = None
+    JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+
+
+@router.get("/jobs/{job_id}")
+async def get_benchmark_job(job_id: str):
+    job = JOB_STATUS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Benchmark job not found")
+    return job
 
 
 
