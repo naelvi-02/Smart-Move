@@ -77,6 +77,11 @@ class PaginatedModelResponse(BaseModel):
     total: int
 
 
+class ImageModelDetailsResponse(ModelResponse):
+    """Detailed image model response with gallery previews."""
+    gallery_images: List[str] = []
+
+
 # ============== Filter Schemas ==============
 
 class ModelFilter(BaseModel):

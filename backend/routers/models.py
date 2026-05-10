@@ -6,13 +6,26 @@ Endpoints for model listing, filtering, and syncing.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
+import re
 from typing import List, Optional
 from database import get_db
 from models import Model
-from schemas import ModelResponse, ModelFilter, SyncResponse, PaginatedModelResponse
+from schemas import ModelResponse, ModelFilter, SyncResponse, PaginatedModelResponse, ImageModelDetailsResponse
 from adapters import openrouter, novita, civitai
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+def get_civitai_model_id(source: str, model_id: str) -> Optional[int]:
+    if source == "civitai" and model_id.isdigit():
+        return int(model_id)
+
+    if source == "novita":
+        match = re.search(r'_(\d+)\.safetensors', model_id)
+        if match:
+            return int(match.group(1))
+
+    return None
 
 
 def apply_tier_filter(query, tier: str):
@@ -196,6 +209,33 @@ async def list_image_models(
     models = query.offset(skip).limit(limit).all()
     
     return {"models": models, "total": total}
+
+
+@router.get("/image/details/{source}/{model_id:path}", response_model=ImageModelDetailsResponse)
+async def get_image_model_details(source: str, model_id: str, db: Session = Depends(get_db)):
+    model = db.query(Model).filter(
+        Model.source == source,
+        Model.model_id == model_id,
+        Model.type == "image"
+    ).first()
+
+    if not model:
+        raise HTTPException(status_code=404, detail="Image model not found")
+
+    db_model_id = str(getattr(model, "model_id", model_id))
+    preview_image_url = getattr(model, "preview_image_url", None)
+
+    gallery_images = []
+    civitai_model_id = get_civitai_model_id(source, db_model_id)
+    if civitai_model_id is not None:
+        gallery_images = await civitai.get_model_gallery_images(civitai_model_id)
+
+    if preview_image_url and preview_image_url not in gallery_images:
+        gallery_images = [preview_image_url, *gallery_images]
+
+    payload = {column.name: getattr(model, column.name) for column in Model.__table__.columns}
+    payload["gallery_images"] = gallery_images[:6]
+    return payload
 
 
 @router.get("/{model_id}", response_model=ModelResponse)

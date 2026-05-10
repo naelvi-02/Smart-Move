@@ -5,10 +5,10 @@ Endpoints for running and viewing benchmark results.
 """
 import asyncio
 import logging
+from typing import Any, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
 from datetime import datetime
 from database import SessionLocal, get_db
 from models import Model, ModelMetric, BenchmarkResult
@@ -30,6 +30,7 @@ async def list_benchmark_types():
     return benchmark_service.get_available_benchmarks()
 
 
+@router.get("", response_model=List[BenchmarkResultResponse])
 @router.get("/", response_model=List[BenchmarkResultResponse])
 async def list_benchmark_results(
     model_id: Optional[str] = None,
@@ -68,7 +69,7 @@ async def run_benchmarks(
     valid_models = []
     for model_id in request.model_ids:
         model = db.query(Model).filter(Model.model_id == model_id).first()
-        if model and model.type == "llm":
+        if model is not None and getattr(model, "type", None) == "llm":
             valid_models.append(model_id)
     
     if not valid_models:
@@ -175,10 +176,13 @@ async def run_benchmark_job(
                     JOB_STATUS[job_id]["completed_benchmarks"] += 1
                     JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
 
-            logger.info("Waiting 10 seconds before next model...")
-            await asyncio.sleep(10)
             JOB_STATUS[job_id]["completed_models"] += 1
+            JOB_STATUS[job_id]["current_benchmark"] = None
             JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+
+            if model_id != model_ids[-1]:
+                logger.info("Waiting 10 seconds before next model...")
+                await asyncio.sleep(10)
 
             try:
                 update_model_metrics(db, model_id)
@@ -215,41 +219,42 @@ def update_model_metrics(db: Session, model_id: str):
     """
     results = db.query(BenchmarkResult).filter(BenchmarkResult.model_id == model_id).all()
     
-    if not results:
+    if len(results) == 0:
         return
     
     # Calculate aggregates
     latencies = [r.latency_ms for r in results if r.latency_ms is not None]
     avg_latency = sum(latencies) / len(latencies) if latencies else None
     
-    success_count = sum(1 for r in results if r.status == "success")
-    refusal_count = sum(1 for r in results if r.status == "refusal")
-    error_count = sum(1 for r in results if r.status == "error")
+    success_count = sum(1 for r in results if getattr(r, "status", None) == "success")
+    refusal_count = sum(1 for r in results if getattr(r, "status", None) == "refusal")
+    error_count = sum(1 for r in results if getattr(r, "status", None) == "error")
     total = len(results)
     
     # Get or create metrics
     metrics = db.query(ModelMetric).filter(ModelMetric.model_id == model_id).first()
-    if not metrics:
+    if metrics is None:
         metrics = ModelMetric(model_id=model_id)
         db.add(metrics)
+    metric_obj = cast(Any, metrics)
     
-    metrics.avg_latency_ms = avg_latency
-    metrics.success_rate = success_count / total if total > 0 else 0
-    metrics.refusal_rate = refusal_count / total if total > 0 else 0
-    metrics.error_rate = error_count / total if total > 0 else 0
+    metric_obj.avg_latency_ms = avg_latency
+    metric_obj.success_rate = success_count / total if total > 0 else 0
+    metric_obj.refusal_rate = refusal_count / total if total > 0 else 0
+    metric_obj.error_rate = error_count / total if total > 0 else 0
     
     # Calculate sub-scores
-    instruction_results = [r for r in results if r.benchmark_type in ["instruction_en", "formatting", "verbosity_short", "verbosity_detailed"]]
-    if instruction_results:
-        metrics.instruction_follow_score = sum(r.score or 0 for r in instruction_results) / len(instruction_results)
+    instruction_results = [r for r in results if getattr(r, "benchmark_type", None) in ["instruction_en", "formatting", "verbosity_short", "verbosity_detailed"]]
+    if len(instruction_results) > 0:
+        metric_obj.instruction_follow_score = sum((r.score or 0) for r in instruction_results) / len(instruction_results)
     
-    lang_results = [r for r in results if r.benchmark_type == "instruction_id"]
-    if lang_results:
-        metrics.language_score = sum(r.score or 0 for r in lang_results) / len(lang_results)
+    lang_results = [r for r in results if getattr(r, "benchmark_type", None) == "instruction_id"]
+    if len(lang_results) > 0:
+        metric_obj.language_score = sum((r.score or 0) for r in lang_results) / len(lang_results)
     
-    coding_results = [r for r in results if r.benchmark_type == "coding"]
-    if coding_results:
-        metrics.coding_score = sum(r.score or 0 for r in coding_results) / len(coding_results)
+    coding_results = [r for r in results if getattr(r, "benchmark_type", None) == "coding"]
+    if len(coding_results) > 0:
+        metric_obj.coding_score = sum((r.score or 0) for r in coding_results) / len(coding_results)
     
     db.commit()
 

@@ -136,6 +136,10 @@ export interface BenchmarkJobStatus {
   updated_at: string;
 }
 
+export interface ImageModelDetails extends Model {
+  gallery_images: string[];
+}
+
 export interface CostSimulatorRequest {
   avg_input_tokens: number;
   avg_output_tokens: number;
@@ -249,6 +253,9 @@ export const modelsApi = {
     const query = params ? '?' + new URLSearchParams(params).toString() : '';
     return fetchApi<Model[]>(`/api/models/image${query}`);
   },
+
+  getImageDetails: (source: string, modelId: string) =>
+    fetchApi<ImageModelDetails>(`/api/models/image/details/${encodeURIComponent(source)}/${encodeURIComponent(modelId)}`),
 
   get: (modelId: string) => fetchApi<Model>(`/api/models/${encodeURIComponent(modelId)}`),
 

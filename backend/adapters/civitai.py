@@ -11,6 +11,24 @@ from config import get_settings
 settings = get_settings()
 
 
+def _get_headers() -> Dict[str, str]:
+    headers = {}
+    if settings.civitai_api_key:
+        headers["Authorization"] = f"Bearer {settings.civitai_api_key}"
+    return headers
+
+
+def _extract_gallery_images(images: List[Dict[str, Any]], limit: int = 6) -> List[str]:
+    gallery_images = []
+    for image in images:
+        image_url = image.get("url")
+        if image_url and image_url not in gallery_images:
+            gallery_images.append(image_url)
+        if len(gallery_images) >= limit:
+            break
+    return gallery_images
+
+
 async def fetch_models(
     limit: int = 100,
     page: int = 1,
@@ -55,9 +73,7 @@ async def fetch_models(
     if tag:
         params["tag"] = tag
     
-    headers = {}
-    if settings.civitai_api_key:
-        headers["Authorization"] = f"Bearer {settings.civitai_api_key}"
+    headers = _get_headers()
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -108,9 +124,8 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     size_gb = total_size_kb / (1024 * 1024) if total_size_kb else None
 
     images = latest_version.get("images", [])
-    preview_image_url = None
-    if images:
-        preview_image_url = images[0].get("url")
+    gallery_images = _extract_gallery_images(images, limit=1)
+    preview_image_url = gallery_images[0] if gallery_images else None
     
     # Determine style bucket based on tags and type
     tags = raw.get("tags", [])
@@ -273,9 +288,7 @@ async def get_model_by_id(model_id: int) -> Optional[Dict[str, Any]]:
     """
     url = f"{settings.civitai_base_url}/models/{model_id}"
     
-    headers = {}
-    if settings.civitai_api_key:
-        headers["Authorization"] = f"Bearer {settings.civitai_api_key}"
+    headers = _get_headers()
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -300,9 +313,7 @@ async def get_model_by_version_id(version_id: int) -> Optional[Dict[str, Any]]:
     """
     url = f"{settings.civitai_base_url}/model-versions/{version_id}"
     
-    headers = {}
-    if settings.civitai_api_key:
-        headers["Authorization"] = f"Bearer {settings.civitai_api_key}"
+    headers = _get_headers()
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -317,6 +328,26 @@ async def get_model_by_version_id(version_id: int) -> Optional[Dict[str, Any]]:
         return None
     except httpx.HTTPError:
         return None
+
+
+async def get_model_gallery_images(model_id: int, limit: int = 6) -> List[str]:
+    url = f"{settings.civitai_base_url}/images"
+    params = {
+        "modelId": model_id,
+        "limit": min(limit, 10),
+        "sort": "Most Reactions",
+        "period": "AllTime",
+        "nsfw": "true",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, params=params, headers=_get_headers())
+            response.raise_for_status()
+            data = response.json()
+        return _extract_gallery_images(data.get("items", []), limit=limit)
+    except httpx.HTTPError:
+        return []
 
 
 async def fetch_all_models(max_pages: int = 5) -> List[Dict[str, Any]]:
