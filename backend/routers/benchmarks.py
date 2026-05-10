@@ -3,11 +3,14 @@ Benchmarks API Router
 
 Endpoints for running and viewing benchmark results.
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import asyncio
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-from database import get_db
+from database import SessionLocal, get_db
 from models import Model, ModelMetric, BenchmarkResult
 from schemas import BenchmarkRequest, BenchmarkResultResponse
 from services import benchmark as benchmark_service
@@ -16,6 +19,7 @@ import uuid
 
 router = APIRouter(prefix="/api/benchmarks", tags=["benchmarks"])
 JOB_STATUS = {}
+logger = logging.getLogger("benchmark_job")
 
 
 @router.get("/types")
@@ -53,7 +57,6 @@ async def list_benchmark_results(
 @router.post("/run")
 async def run_benchmarks(
     request: BenchmarkRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -92,13 +95,7 @@ async def run_benchmarks(
         "last_error": None,
         "updated_at": datetime.utcnow().isoformat(),
     }
-    background_tasks.add_task(
-        run_benchmark_job,
-        job_id=job_id,
-        model_ids=valid_models,
-        benchmark_types=benchmark_types,
-        db=db
-    )
+    asyncio.create_task(run_benchmark_job(job_id, valid_models, benchmark_types))
     
     return {
         "job_id": job_id,
@@ -113,101 +110,94 @@ async def run_benchmark_job(
     job_id: str,
     model_ids: List[str],
     benchmark_types: List[str],
-    db: Session
 ):
     """
     Background job to run benchmarks.
     """
-    import logging
-    import asyncio
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("benchmark_job")
-    
     logger.info(f"Starting benchmark job {job_id} for models: {model_ids}")
     JOB_STATUS[job_id]["status"] = "running"
-    
-    for model_id in model_ids:
-        for i, bench_type in enumerate(benchmark_types):
-            try:
-                JOB_STATUS[job_id]["current_model"] = model_id
-                JOB_STATUS[job_id]["current_benchmark"] = bench_type
-                JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
-                # Add delay between requests to avoid rate limiting (8 seconds for free models)
-                if i > 0:
-                    logger.info("Waiting 8 seconds to avoid rate limit...")
-                    await asyncio.sleep(8)
-                
-                logger.info(f"Running benchmark: {model_id} / {bench_type}")
-                
-                # Run the benchmark
-                result = await benchmark_service.run_benchmark(model_id, bench_type)
-                
-                logger.info(f"Benchmark result: status={result.get('status')}, score={result.get('score')}, error={result.get('error')}")
-                
-                # If rate limited, wait longer and retry once
-                if result.get("status") == "rate_limited":
-                    logger.info("Rate limited! Waiting 15 seconds and retrying...")
-                    await asyncio.sleep(15)
+    db = SessionLocal()
+    try:
+        for model_id in model_ids:
+            for i, bench_type in enumerate(benchmark_types):
+                try:
+                    JOB_STATUS[job_id]["current_model"] = model_id
+                    JOB_STATUS[job_id]["current_benchmark"] = bench_type
+                    JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+                    if i > 0:
+                        logger.info("Waiting 8 seconds to avoid rate limit...")
+                        await asyncio.sleep(8)
+
+                    logger.info(f"Running benchmark: {model_id} / {bench_type}")
                     result = await benchmark_service.run_benchmark(model_id, bench_type)
-                    logger.info(f"Retry result: status={result.get('status')}, score={result.get('score')}")
+                    logger.info(f"Benchmark result: status={result.get('status')}, score={result.get('score')}, error={result.get('error')}")
 
-                if result.get("status") != "success":
-                    JOB_STATUS[job_id]["last_error"] = result.get("error") or result.get("notes") or result.get("status")
-                
-                # Store result
-                db_result = BenchmarkResult(
-                    model_id=result.get("model_id"),
-                    benchmark_type=result.get("benchmark_type"),
-                    prompt=result.get("prompt", ""),
-                    response=result.get("response"),
-                    latency_ms=result.get("latency_ms"),
-                    input_tokens=result.get("input_tokens"),
-                    output_tokens=result.get("output_tokens"),
-                    status=result.get("status", "error"),
-                    score=result.get("score"),
-                    notes=result.get("notes") or result.get("error"),  # Include error in notes
-                )
-                db.add(db_result)
-                db.commit()
-                JOB_STATUS[job_id]["completed_benchmarks"] += 1
-                JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
-                
+                    if result.get("status") == "rate_limited":
+                        logger.info("Rate limited! Waiting 15 seconds and retrying...")
+                        await asyncio.sleep(15)
+                        result = await benchmark_service.run_benchmark(model_id, bench_type)
+                        logger.info(f"Retry result: status={result.get('status')}, score={result.get('score')}")
+
+                    if result.get("status") != "success":
+                        JOB_STATUS[job_id]["last_error"] = result.get("error") or result.get("notes") or result.get("status")
+
+                    db_result = BenchmarkResult(
+                        model_id=result.get("model_id"),
+                        benchmark_type=result.get("benchmark_type"),
+                        prompt=result.get("prompt", ""),
+                        response=result.get("response"),
+                        latency_ms=result.get("latency_ms"),
+                        input_tokens=result.get("input_tokens"),
+                        output_tokens=result.get("output_tokens"),
+                        status=result.get("status", "error"),
+                        score=result.get("score"),
+                        notes=result.get("notes") or result.get("error"),
+                    )
+                    db.add(db_result)
+                    db.commit()
+                    JOB_STATUS[job_id]["completed_benchmarks"] += 1
+                    JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+
+                except Exception as e:
+                    logger.error(f"Benchmark exception for {model_id}/{bench_type}: {e}")
+                    db_result = BenchmarkResult(
+                        model_id=model_id,
+                        benchmark_type=bench_type,
+                        prompt="",
+                        response=None,
+                        latency_ms=None,
+                        status="error",
+                        notes=str(e),
+                    )
+                    db.add(db_result)
+                    db.commit()
+                    JOB_STATUS[job_id]["last_error"] = str(e)
+                    JOB_STATUS[job_id]["completed_benchmarks"] += 1
+                    JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+
+            logger.info("Waiting 10 seconds before next model...")
+            await asyncio.sleep(10)
+            JOB_STATUS[job_id]["completed_models"] += 1
+            JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+
+            try:
+                update_model_metrics(db, model_id)
+                scoring.update_model_scores(db, model_id)
             except Exception as e:
-                # Log error and save to database
-                logger.error(f"Benchmark exception for {model_id}/{bench_type}: {e}")
-                db_result = BenchmarkResult(
-                    model_id=model_id,
-                    benchmark_type=bench_type,
-                    prompt="",
-                    response=None,
-                    latency_ms=None,
-                    status="error",
-                    notes=str(e),
-                )
-                db.add(db_result)
-                db.commit()
+                logger.error(f"Error updating metrics for {model_id}: {e}")
                 JOB_STATUS[job_id]["last_error"] = str(e)
-                JOB_STATUS[job_id]["completed_benchmarks"] += 1
-                JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        
-        # Wait between models too
-        logger.info("Waiting 10 seconds before next model...")
-        await asyncio.sleep(10)
-        JOB_STATUS[job_id]["completed_models"] += 1
-        JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        
-        # Update model metrics after all benchmarks for this model
-        try:
-            update_model_metrics(db, model_id)
-            scoring.update_model_scores(db, model_id)
-        except Exception as e:
-            logger.error(f"Error updating metrics for {model_id}: {e}")
-            JOB_STATUS[job_id]["last_error"] = str(e)
 
-    JOB_STATUS[job_id]["status"] = "completed_with_errors" if JOB_STATUS[job_id]["last_error"] else "completed"
-    JOB_STATUS[job_id]["current_model"] = None
-    JOB_STATUS[job_id]["current_benchmark"] = None
-    JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+        JOB_STATUS[job_id]["status"] = "completed_with_errors" if JOB_STATUS[job_id]["last_error"] else "completed"
+        JOB_STATUS[job_id]["current_model"] = None
+        JOB_STATUS[job_id]["current_benchmark"] = None
+        JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+    except Exception as e:
+        JOB_STATUS[job_id]["status"] = "failed"
+        JOB_STATUS[job_id]["last_error"] = str(e)
+        JOB_STATUS[job_id]["updated_at"] = datetime.utcnow().isoformat()
+        logger.exception(f"Benchmark job {job_id} failed")
+    finally:
+        db.close()
 
 
 @router.get("/jobs/{job_id}")

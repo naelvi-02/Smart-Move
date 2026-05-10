@@ -184,6 +184,10 @@ export default function Benchmarks() {
         }, 0);
     }, [selectedModelObjects]);
 
+    const benchmarkProgress = activeJob && activeJob.total_benchmarks > 0
+        ? Math.min(100, (activeJob.completed_benchmarks / activeJob.total_benchmarks) * 100)
+        : 0;
+
     const runBenchmarks = async () => {
         if (selectedModels.length === 0) return;
         try {
@@ -205,6 +209,7 @@ export default function Benchmarks() {
             });
         } catch (err) {
             console.error('Failed to run benchmarks:', err);
+            setRunning(false);
         }
     };
 
@@ -290,6 +295,9 @@ export default function Benchmarks() {
                         {activeJob.current_benchmark ? ` / ${activeJob.current_benchmark}` : ''}
                     </span>
                     {activeJob.last_error && <span className="text-rose-300">Last error: {activeJob.last_error}</span>}
+                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-indigo-400 transition-all" style={{ width: `${benchmarkProgress}%` }} />
+                    </div>
                 </div>
             )}
 
