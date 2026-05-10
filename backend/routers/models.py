@@ -7,13 +7,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 import re
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from database import get_db
 from models import Model
 from schemas import ModelResponse, ModelFilter, SyncResponse, PaginatedModelResponse, ImageModelDetailsResponse
 from adapters import openrouter, novita, civitai
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+def normalize_model_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
 def get_civitai_model_id(source: str, model_id: str) -> Optional[int]:
@@ -26,6 +32,49 @@ def get_civitai_model_id(source: str, model_id: str) -> Optional[int]:
             return int(match.group(1))
 
     return None
+
+
+def refresh_civitai_novita_availability(db: Session) -> int:
+    novita_models = db.query(Model.model_id, Model.name).filter(
+        Model.source == "novita",
+        Model.type == "image"
+    ).all()
+
+    novita_civitai_ids = set()
+    novita_names = []
+
+    for model_id, name in novita_models:
+        extracted_id = get_civitai_model_id("novita", str(model_id))
+        if extracted_id is not None:
+            novita_civitai_ids.add(str(extracted_id))
+
+        normalized_name = normalize_model_name(name)
+        if len(normalized_name) >= 5:
+            novita_names.append(normalized_name)
+
+    updated_models = 0
+    civitai_models = db.query(Model).filter(
+        Model.source == "civitai",
+        Model.type == "image"
+    ).all()
+
+    for model in civitai_models:
+        model_obj = cast(Any, model)
+        civitai_model_id = str(getattr(model, "model_id", ""))
+        civitai_name = normalize_model_name(getattr(model, "name", None))
+
+        is_available = civitai_model_id in novita_civitai_ids
+        if not is_available and len(civitai_name) >= 5:
+            is_available = any(
+                civitai_name == novita_name or civitai_name in novita_name or novita_name in civitai_name
+                for novita_name in novita_names
+            )
+
+        if getattr(model, "available_in_novita", False) != is_available:
+            model_obj.available_in_novita = is_available
+            updated_models += 1
+
+    return updated_models
 
 
 def apply_tier_filter(query, tier: str):
@@ -324,7 +373,9 @@ async def sync_civitai_models(
                     synced += 1
             except Exception as e:
                 errors.append(f"Error syncing {data.get('model_id', 'unknown')}: {str(e)}")
-        
+
+        refresh_civitai_novita_availability(db)
+
         db.commit()
         
         return SyncResponse(
@@ -368,7 +419,9 @@ async def sync_novita_models(db: Session = Depends(get_db)):
                     synced += 1
             except Exception as e:
                 errors.append(f"Error syncing {data.get('model_id', 'unknown')}: {str(e)}")
-        
+
+        refresh_civitai_novita_availability(db)
+
         db.commit()
         
         return SyncResponse(
