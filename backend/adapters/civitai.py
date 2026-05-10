@@ -106,6 +106,11 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     files = latest_version.get("files", [])
     total_size_kb = sum(f.get("sizeKB", 0) for f in files)
     size_gb = total_size_kb / (1024 * 1024) if total_size_kb else None
+
+    images = latest_version.get("images", [])
+    preview_image_url = None
+    if images:
+        preview_image_url = images[0].get("url")
     
     # Determine style bucket based on tags and type
     tags = raw.get("tags", [])
@@ -126,6 +131,7 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "download_count": raw.get("stats", {}).get("downloadCount", 0),
         "favorite_count": raw.get("stats", {}).get("favoriteCount", 0),
         "popularity_score": calculate_popularity_score(raw.get("stats", {})),
+        "preview_image_url": preview_image_url,
     }
 
 

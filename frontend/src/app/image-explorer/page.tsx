@@ -17,8 +17,11 @@ import {
 import { modelsApi, Model } from '@/lib/api';
 import { cn, formatNumber } from '@/lib/utils';
 
+const IMAGE_SKELETON_KEYS = ['image-skeleton-1', 'image-skeleton-2', 'image-skeleton-3', 'image-skeleton-4', 'image-skeleton-5', 'image-skeleton-6'];
+
 const StyleBucketCard = ({ bucket, icon: Icon, label, active, onClick, color }: any) => (
     <button
+        type="button"
         onClick={onClick}
         className={cn(
             "flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-300 group",
@@ -44,15 +47,11 @@ export default function ImageExplorer() {
     const [expandedModel, setExpandedModel] = useState<string | null>(null);
     const itemsPerPage = 50;
 
-    useEffect(() => {
+    React.useEffect(() => {
         setCurrentPage(1); // Reset to page 1 when filters change
     }, [source, styleBucket, sortBy, availableOnly]);
 
-    useEffect(() => {
-        loadModels();
-    }, [source, styleBucket, sortBy, availableOnly, currentPage]);
-
-    const loadModels = async () => {
+    const loadModels = React.useCallback(async () => {
         try {
             setLoading(true);
             const skip = (currentPage - 1) * itemsPerPage;
@@ -76,7 +75,11 @@ export default function ImageExplorer() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [source, styleBucket, sortBy, availableOnly, currentPage]);
+
+    useEffect(() => {
+        loadModels();
+    }, [loadModels]);
 
     const categories = [
         { id: '', label: 'All', icon: Palette, color: 'blue' },
@@ -210,8 +213,8 @@ export default function ImageExplorer() {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {loading ? (
-                                [...Array(6)].map((_, i) => (
-                                    <tr key={i} className="animate-pulse">
+                                IMAGE_SKELETON_KEYS.map((key) => (
+                                    <tr key={key} className="animate-pulse">
                                         <td className="p-4 pl-6"><div className="h-6 w-48 bg-white/5 rounded" /></td>
                                         <td className="p-4"><div className="h-6 w-20 bg-white/5 rounded mx-auto" /></td>
                                         <td className="p-4"><div className="h-6 w-20 bg-white/5 rounded mx-auto" /></td>
@@ -299,7 +302,7 @@ export default function ImageExplorer() {
                                             </td>
                                         </tr>
                                         {/* Expanded Preview Card Row */}
-                                        {expandedModel === model.id && model.preview_image_url && (
+                                        {expandedModel === model.id && (
                                             <tr className="bg-gradient-to-b from-white/[0.02] to-transparent">
                                                 <td colSpan={5} className="p-6">
                                                     <motion.div
@@ -308,12 +311,19 @@ export default function ImageExplorer() {
                                                         exit={{ opacity: 0, height: 0 }}
                                                         className="flex gap-6"
                                                     >
-                                                        <div className="w-80 h-auto rounded-xl overflow-hidden border border-white/10 shadow-2xl">
-                                                            <img
-                                                                src={model.preview_image_url}
-                                                                alt={model.name || 'Preview'}
-                                                                className="w-full h-auto object-contain bg-black"
-                                                            />
+                                                        <div className="w-80 h-auto rounded-xl overflow-hidden border border-white/10 shadow-2xl bg-black/20 flex items-center justify-center min-h-[260px]">
+                                                            {model.preview_image_url ? (
+                                                                <img
+                                                                    src={model.preview_image_url}
+                                                                    alt={model.name || 'Preview'}
+                                                                    className="w-full h-auto object-contain bg-black"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex flex-col items-center gap-3 text-slate-500 p-8 text-center">
+                                                                    <ImageIcon size={36} />
+                                                                    <p className="text-sm">No preview image available yet.</p>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div className="flex-1 space-y-4">
                                                             <div>
@@ -321,8 +331,8 @@ export default function ImageExplorer() {
                                                                 <p className="text-sm text-slate-400 mt-1">Source: {model.source} • Base: {model.base_model || 'Unknown'}</p>
                                                             </div>
                                                             <div className="flex flex-wrap gap-2">
-                                                                {model.tags?.slice(0, 8).map((tag, i) => (
-                                                                    <span key={i} className="px-2 py-1 rounded bg-white/5 text-xs text-slate-400 border border-white/10">
+                                                                {model.tags?.slice(0, 8).map((tag) => (
+                                                                    <span key={`${model.id}-${tag}`} className="px-2 py-1 rounded bg-white/5 text-xs text-slate-400 border border-white/10">
                                                                         {tag}
                                                                     </span>
                                                                 ))}
@@ -351,6 +361,7 @@ export default function ImageExplorer() {
                             </div>
                             <div className="flex items-center gap-2">
                                 <button
+                                    type="button"
                                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                                     disabled={currentPage === 1}
                                     className="p-2 rounded-lg bg-white/5 border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-colors"
@@ -369,6 +380,7 @@ export default function ImageExplorer() {
 
                                         return (
                                             <button
+                                                type="button"
                                                 key={pageNum}
                                                 onClick={() => setCurrentPage(pageNum)}
                                                 className={cn(
@@ -385,6 +397,7 @@ export default function ImageExplorer() {
                                 </div>
 
                                 <button
+                                    type="button"
                                     onClick={() => setCurrentPage(p => p + 1)}
                                     disabled={models.length < itemsPerPage}
                                     className="p-2 rounded-lg bg-white/5 border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-colors"

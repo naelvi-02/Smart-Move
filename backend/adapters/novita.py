@@ -132,6 +132,7 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
         "status": "available",
         "nsfw_flag": raw.get("is_nsfw", True),
         "tags": raw.get("tags", []),
+        "available_in_novita": True,
     }
     
     # Enrich with Civitai data if available
@@ -144,6 +145,7 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
             "download_count": civitai_data.get("download_count", 0),
             "favorite_count": civitai_data.get("favorite_count", 0),
             "popularity_score": civitai_data.get("popularity_score", 0),
+            "preview_image_url": civitai_data.get("preview_image_url"),
         })
     else:
         # Fallback: Use Novita's categories and enhanced keyword matching
