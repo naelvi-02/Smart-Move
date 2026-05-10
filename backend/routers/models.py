@@ -35,22 +35,27 @@ def get_civitai_model_id(source: str, model_id: str) -> Optional[int]:
 
 
 def refresh_civitai_novita_availability(db: Session) -> int:
-    novita_models = db.query(Model.model_id, Model.name).filter(
+    novita_models = db.query(Model.model_id, Model.name, Model.nsfw_flag).filter(
         Model.source == "novita",
         Model.type == "image"
     ).all()
 
     novita_civitai_ids = set()
-    novita_names = []
+    novita_nsfw_by_id = {}
+    novita_names = set()
+    novita_nsfw_by_name = {}
 
-    for model_id, name in novita_models:
+    for model_id, name, nsfw_flag in novita_models:
         extracted_id = get_civitai_model_id("novita", str(model_id))
         if extracted_id is not None:
-            novita_civitai_ids.add(str(extracted_id))
+            extracted_id_str = str(extracted_id)
+            novita_civitai_ids.add(extracted_id_str)
+            novita_nsfw_by_id[extracted_id_str] = bool(nsfw_flag)
 
         normalized_name = normalize_model_name(name)
         if len(normalized_name) >= 5:
-            novita_names.append(normalized_name)
+            novita_names.add(normalized_name)
+            novita_nsfw_by_name[normalized_name] = novita_nsfw_by_name.get(normalized_name, False) or bool(nsfw_flag)
 
     updated_models = 0
     civitai_models = db.query(Model).filter(
@@ -58,20 +63,53 @@ def refresh_civitai_novita_availability(db: Session) -> int:
         Model.type == "image"
     ).all()
 
+    civitai_models_by_name = {}
+    for model in civitai_models:
+        civitai_name = normalize_model_name(getattr(model, "name", None))
+        if len(civitai_name) < 5:
+            continue
+        civitai_models_by_name.setdefault(civitai_name, []).append(model)
+
+    name_fallback_ids = set()
+    for civitai_name, grouped_models in civitai_models_by_name.items():
+        if civitai_name not in novita_names:
+            continue
+
+        has_exact_id_match = any(
+            str(getattr(model, "model_id", "")) in novita_civitai_ids
+            for model in grouped_models
+        )
+        if has_exact_id_match:
+            continue
+
+        best_model = max(
+            grouped_models,
+            key=lambda model: (
+                getattr(model, "download_count", 0) or 0,
+                getattr(model, "favorite_count", 0) or 0,
+                getattr(model, "popularity_score", 0) or 0,
+            ),
+        )
+        name_fallback_ids.add(getattr(best_model, "id", None))
+
     for model in civitai_models:
         model_obj = cast(Any, model)
         civitai_model_id = str(getattr(model, "model_id", ""))
         civitai_name = normalize_model_name(getattr(model, "name", None))
 
         is_available = civitai_model_id in novita_civitai_ids
-        if not is_available and len(civitai_name) >= 5:
-            is_available = any(
-                civitai_name == novita_name or civitai_name in novita_name or novita_name in civitai_name
-                for novita_name in novita_names
-            )
+        matched_nsfw = novita_nsfw_by_id.get(civitai_model_id, False)
+
+        if not is_available and len(civitai_name) >= 5 and getattr(model, "id", None) in name_fallback_ids:
+            is_available = True
+            matched_nsfw = novita_nsfw_by_name.get(civitai_name, False)
 
         if getattr(model, "available_in_novita", False) != is_available:
             model_obj.available_in_novita = is_available
+            updated_models += 1
+
+        if matched_nsfw and not getattr(model, "nsfw_flag", False):
+            model_obj.nsfw_flag = True
             updated_models += 1
 
     return updated_models
