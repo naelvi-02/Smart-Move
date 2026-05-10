@@ -70,6 +70,8 @@ DATABASE_URL=postgresql+psycopg://user:pass@host:5432/smart_move
 
 Full AWS VPS notes: `docs/aws-vps-deploy.md`
 
+Auto-deploy notes: `docs/github-vps-autodeploy.md`
+
 Notes:
 
 - Desktop dev still uses the local sidecar by default.

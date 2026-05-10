@@ -1,0 +1,43 @@
+name: Deploy Backend VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'deploy/aws/**'
+      - '.github/workflows/deploy-backend.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          DEPLOY_PORT="${{ secrets.VPS_PORT }}"
+          if [ -z "$DEPLOY_PORT" ]; then DEPLOY_PORT=22; fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$DEPLOY_PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy backend on VPS
+        run: |
+          DEPLOY_PORT="${{ secrets.VPS_PORT }}"
+          if [ -z "$DEPLOY_PORT" ]; then DEPLOY_PORT=22; fi
+          ssh -p "$DEPLOY_PORT" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
+          set -euo pipefail
+          cd /opt/smart-move
+          git fetch --tags origin
+          git reset --hard origin/main
+          /opt/smart-move/.venv/bin/pip install -r /opt/smart-move/backend/requirements.txt
+          sudo cp /opt/smart-move/deploy/aws/nginx-smart-move.conf /etc/nginx/sites-available/smart-move
+          sudo nginx -t
+          sudo systemctl restart smart-move-backend
+          sudo systemctl reload nginx
+          EOF
