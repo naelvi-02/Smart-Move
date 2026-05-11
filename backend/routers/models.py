@@ -403,12 +403,41 @@ async def sync_civitai_models(
     Sync models from Civitai API.
     """
     try:
-        models_data = await civitai.fetch_all_models(
+        primary_models = await civitai.fetch_all_models(
             max_pages=max_pages,
             types=["Checkpoint"],
             sort="Highest Rated",
             nsfw=True,
         )
+        nsfw_models = await civitai.fetch_nsfw_models_from_images(
+            max_pages=max(2, min(max_pages, 4)),
+            base_url=getattr(civitai.settings, "civitai_nsfw_base_url", None),
+        )
+
+        merged_models: dict[str, dict[str, Any]] = {}
+        for data in primary_models + nsfw_models:
+            model_key = str(data.get("model_id", ""))
+            if not model_key:
+                continue
+
+            existing_data = merged_models.get(model_key)
+            if not existing_data:
+                merged_models[model_key] = dict(data)
+                continue
+
+            for key, value in data.items():
+                if value is None:
+                    continue
+
+                current_value = existing_data.get(key)
+                if current_value in (None, [], "", 0, False):
+                    existing_data[key] = value
+                    continue
+
+                if key == "nsfw_flag":
+                    existing_data[key] = bool(current_value or value)
+
+        models_data = list(merged_models.values())
         
         synced = 0
         updated = 0

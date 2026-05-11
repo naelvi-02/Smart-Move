@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     novita_base_url: str = "https://api.novita.ai/v3"
     civitai_base_url: str = "https://civitai.com/api/v1"
+    civitai_nsfw_base_url: str = "https://civitai.red/api/v1"
     
     class Config:
         env_file = str(get_env_file())

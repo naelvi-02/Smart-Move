@@ -11,6 +11,10 @@ from config import get_settings
 settings = get_settings()
 
 
+def _resolve_base_url(base_url: Optional[str] = None) -> str:
+    return (base_url or settings.civitai_base_url).rstrip("/")
+
+
 def _get_headers() -> Dict[str, str]:
     headers = {}
     if settings.civitai_api_key:
@@ -36,7 +40,8 @@ async def fetch_models(
     sort: str = "Highest Rated",
     nsfw: Optional[bool] = None,
     base_models: Optional[List[str]] = None,
-    tag: Optional[str] = None
+    tag: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Fetch models from Civitai API with optional filters.
@@ -53,7 +58,7 @@ async def fetch_models(
     Returns:
         Dictionary with models and metadata.
     """
-    url = f"{settings.civitai_base_url}/models"
+    url = f"{_resolve_base_url(base_url)}/models"
     
     params = {
         "limit": min(limit, 100),
@@ -276,7 +281,7 @@ def calculate_popularity_score(stats: Dict[str, Any]) -> int:
     return int(download_score + favorite_score + rating_score + engagement_score)
 
 
-async def get_model_by_id(model_id: int) -> Optional[Dict[str, Any]]:
+async def get_model_by_id(model_id: int, base_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Get detailed information for a specific model.
     
@@ -286,7 +291,7 @@ async def get_model_by_id(model_id: int) -> Optional[Dict[str, Any]]:
     Returns:
         Model details or None if not found.
     """
-    url = f"{settings.civitai_base_url}/models/{model_id}"
+    url = f"{_resolve_base_url(base_url)}/models/{model_id}"
     
     headers = _get_headers()
     
@@ -301,7 +306,7 @@ async def get_model_by_id(model_id: int) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def get_model_by_version_id(version_id: int) -> Optional[Dict[str, Any]]:
+async def get_model_by_version_id(version_id: int, base_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Get model information via version ID (used for Novita-Civitai hybrid sync).
     
@@ -311,7 +316,7 @@ async def get_model_by_version_id(version_id: int) -> Optional[Dict[str, Any]]:
     Returns:
         Model details or None if not found.
     """
-    url = f"{settings.civitai_base_url}/model-versions/{version_id}"
+    url = f"{_resolve_base_url(base_url)}/model-versions/{version_id}"
     
     headers = _get_headers()
     
@@ -324,10 +329,91 @@ async def get_model_by_version_id(version_id: int) -> Optional[Dict[str, Any]]:
         # Version API returns different structure, need to fetch the parent model
         model_id = data.get("modelId")
         if model_id:
-            return await get_model_by_id(model_id)
+            return await get_model_by_id(model_id, base_url=base_url)
         return None
     except httpx.HTTPError:
         return None
+
+
+async def fetch_nsfw_models_from_images(
+    max_pages: int = 2,
+    limit: int = 100,
+    nsfw_levels: Optional[List[str]] = None,
+    sort: str = "Most Reactions",
+    period: str = "AllTime",
+    max_version_ids: int = 60,
+    base_url: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    resolved_base_url = _resolve_base_url(base_url)
+    url = f"{resolved_base_url}/images"
+    levels = nsfw_levels or ["Soft", "Mature", "X"]
+    headers = _get_headers()
+
+    version_ids: List[int] = []
+    seen_version_ids = set()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for level in levels:
+                for page in range(1, max_pages + 1):
+                    params = {
+                        "limit": min(limit, 200),
+                        "page": page,
+                        "sort": sort,
+                        "period": period,
+                        "nsfw": level,
+                    }
+                    response = await client.get(url, params=params, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+
+                    items = data.get("items", [])
+                    if not items:
+                        break
+
+                    for item in items:
+                        for raw_version_id in item.get("modelVersionIds", []):
+                            try:
+                                version_id = int(raw_version_id)
+                            except (TypeError, ValueError):
+                                continue
+
+                            if version_id in seen_version_ids:
+                                continue
+
+                            seen_version_ids.add(version_id)
+                            version_ids.append(version_id)
+
+                            if len(version_ids) >= max_version_ids:
+                                break
+
+                        if len(version_ids) >= max_version_ids:
+                            break
+
+                    if len(version_ids) >= max_version_ids:
+                        break
+
+                if len(version_ids) >= max_version_ids:
+                    break
+    except httpx.HTTPError as e:
+        print(f"Civitai NSFW image API error: {e}")
+        return []
+
+    models: List[Dict[str, Any]] = []
+    seen_model_ids = set()
+    for version_id in version_ids:
+        model = await get_model_by_version_id(version_id, base_url=resolved_base_url)
+        if not model:
+            continue
+
+        model_key = str(model.get("model_id", ""))
+        if not model_key or model_key in seen_model_ids:
+            continue
+
+        seen_model_ids.add(model_key)
+        models.append(model)
+
+    return models
 
 
 async def get_model_gallery_images(model_id: int, limit: int = 6) -> List[str]:
@@ -357,6 +443,7 @@ async def fetch_all_models(
     nsfw: Optional[bool] = None,
     base_models: Optional[List[str]] = None,
     tag: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch multiple pages of models from Civitai.
@@ -383,6 +470,7 @@ async def fetch_all_models(
             nsfw=nsfw,
             base_models=base_models,
             tag=tag,
+            base_url=base_url,
         )
         models = result.get("models", [])
         
