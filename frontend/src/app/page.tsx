@@ -21,7 +21,7 @@ import {
   RefreshCw,
   ExternalLink
 } from 'lucide-react';
-import { debugApi, modelsApi, ModelStats } from '@/lib/api';
+import { debugApi, modelsApi, ModelStats, SyncJobStatus } from '@/lib/api';
 import { cn } from '@/lib/utils'; // Make sure you have this utility or use clsx directly
 
 // --- Components ---
@@ -69,6 +69,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<ModelStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncJobId, setSyncJobId] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up_to_date' | 'installing' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState('');
@@ -93,18 +94,50 @@ export default function Dashboard() {
     ? Math.min(100, ((finishedSources + (activeSourceIndex >= 0 ? 0.5 : 0)) / totalSources) * 100)
     : (finishedSources / totalSources) * 100;
 
-  const persistSyncState = useCallback((nextSyncing: boolean, nextStatus: Record<string, SyncState>, nextDetails: Record<string, string>) => {
+  const persistSyncState = useCallback((
+    nextSyncing: boolean,
+    nextStatus: Record<string, SyncState>,
+    nextDetails: Record<string, string>,
+    nextJobId: string | null,
+  ) => {
     if (typeof window === 'undefined') {
       return;
     }
 
     window.localStorage.setItem(DASHBOARD_SYNC_STORAGE_KEY, JSON.stringify({
       syncing: nextSyncing,
+      syncJobId: nextJobId,
       syncStatus: nextStatus,
       syncDetails: nextDetails,
       updatedAt: Date.now(),
     }));
   }, []);
+
+  const applySyncJob = useCallback((job: SyncJobStatus) => {
+    const nextStatus = SYNC_SOURCES.reduce((acc, source) => {
+      acc[source.key] = job.sources[source.key]?.status ?? 'idle';
+      return acc;
+    }, {} as Record<string, SyncState>);
+
+    const nextDetails = SYNC_SOURCES.reduce((acc, source) => {
+      const sourceState = job.sources[source.key];
+      if (sourceState?.detail) {
+        acc[source.key] = sourceState.detail;
+      } else if (sourceState?.errors?.length) {
+        acc[source.key] = sourceState.errors[0];
+      }
+      return acc;
+    }, {} as Record<string, string>);
+
+    const nextSyncing = job.status === 'queued' || job.status === 'running';
+    const nextJobId = nextSyncing ? job.job_id : null;
+
+    setSyncStatus(nextStatus);
+    setSyncDetails(nextDetails);
+    setSyncing(nextSyncing);
+    setSyncJobId(nextJobId);
+    persistSyncState(nextSyncing, nextStatus, nextDetails, nextJobId);
+  }, [persistSyncState]);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -141,6 +174,7 @@ export default function Dashboard() {
         try {
           const parsed = JSON.parse(raw) as {
             syncing?: boolean;
+            syncJobId?: string | null;
             syncStatus?: Record<string, SyncState>;
             syncDetails?: Record<string, string>;
             updatedAt?: number;
@@ -154,8 +188,9 @@ export default function Dashboard() {
             setSyncDetails(parsed.syncDetails);
           }
 
-          if (parsed.syncing && parsed.updatedAt && Date.now() - parsed.updatedAt < 15 * 60 * 1000) {
+          if (parsed.syncing && parsed.syncJobId && parsed.updatedAt && Date.now() - parsed.updatedAt < 15 * 60 * 1000) {
             setSyncing(true);
+            setSyncJobId(parsed.syncJobId);
           }
         } catch {
         }
@@ -165,6 +200,57 @@ export default function Dashboard() {
     checkHealth();
     loadStats();
   }, [checkHealth, loadStats]);
+
+  useEffect(() => {
+    if (!syncing || !syncJobId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollSyncJob = async () => {
+      try {
+        const job = await modelsApi.getSyncJob(syncJobId);
+        if (cancelled) {
+          return;
+        }
+
+        applySyncJob(job);
+
+        if (job.status === 'completed' || job.status === 'completed_with_errors' || job.status === 'failed') {
+          await Promise.all([checkHealth(), loadStats()]);
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Sync status failed';
+        const nextStatus = { ...syncStatus };
+        const nextDetails = { ...syncDetails };
+        const activeSource = SYNC_SOURCES.find(source => nextStatus[source.key] === 'syncing')?.key ?? 'novita';
+
+        nextStatus[activeSource] = 'error';
+        nextDetails[activeSource] = message;
+
+        setSyncStatus(nextStatus);
+        setSyncDetails(nextDetails);
+        setSyncing(false);
+        setSyncJobId(null);
+        persistSyncState(false, nextStatus, nextDetails, null);
+      }
+    };
+
+    void pollSyncJob();
+    const intervalId = window.setInterval(() => {
+      void pollSyncJob();
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [applySyncJob, checkHealth, loadStats, syncDetails, syncJobId, syncStatus, syncing, persistSyncState]);
 
   const checkForDesktopUpdate = async () => {
     setCheckingUpdate(true);
@@ -217,67 +303,36 @@ export default function Dashboard() {
   };
 
   const syncAll = async () => {
-    let currentStatus = { openrouter: 'idle', civitai: 'idle', novita: 'idle' } as Record<string, SyncState>;
-    let currentDetails = {} as Record<string, string>;
+    const currentStatus = { openrouter: 'idle', civitai: 'idle', novita: 'idle' } as Record<string, SyncState>;
+    const currentDetails = {} as Record<string, string>;
 
     try {
       setSyncing(true);
+      setSyncJobId(null);
       setSyncStatus(currentStatus);
       setSyncDetails(currentDetails);
-      persistSyncState(true, currentStatus, currentDetails);
+      persistSyncState(true, currentStatus, currentDetails, null);
 
-      const steps = [
-        { key: 'openrouter', label: 'OpenRouter', run: modelsApi.syncOpenRouter },
-        { key: 'civitai', label: 'Civitai', run: modelsApi.syncCivitai },
-        { key: 'novita', label: 'Novita', run: modelsApi.syncNovita },
-      ] as const;
+      const job = await modelsApi.startSyncJob();
+      setSyncJobId(job.job_id);
+      persistSyncState(true, currentStatus, currentDetails, job.job_id);
 
-      for (const step of steps) {
-        currentStatus = { ...currentStatus, [step.key]: 'syncing' };
-        setSyncStatus(currentStatus);
-        persistSyncState(true, currentStatus, currentDetails);
-
-        try {
-          const result = await step.run();
-          currentStatus = { ...currentStatus, [step.key]: 'success' };
-          currentDetails = {
-            ...currentDetails,
-            [step.key]: `${result.models_synced} new, ${result.models_updated} updated`,
-          };
-          setSyncStatus(currentStatus);
-          setSyncDetails(currentDetails);
-          persistSyncState(true, currentStatus, currentDetails);
-
-          if (step.key === 'openrouter') {
-            try {
-              const scoreResult = await modelsApi.syncNsfwScores();
-              setDebugInfo(prev => ({
-                ...prev,
-                stats: `ok · scores updated ${scoreResult.updated}`,
-              }));
-            } catch (error) {
-              console.error('Failed to sync NSFW scores:', error);
-            }
-          }
-        } catch (error) {
-          currentStatus = { ...currentStatus, [step.key]: 'error' };
-          currentDetails = {
-            ...currentDetails,
-            [step.key]: error instanceof Error ? error.message : 'Sync failed',
-          };
-          setSyncStatus(currentStatus);
-          setSyncDetails(currentDetails);
-          persistSyncState(true, currentStatus, currentDetails);
-          console.error(`Failed to sync ${step.label}:`, error);
-        }
+      const initialJobStatus = await modelsApi.getSyncJob(job.job_id);
+      applySyncJob(initialJobStatus);
+      if (initialJobStatus.status === 'completed' || initialJobStatus.status === 'completed_with_errors' || initialJobStatus.status === 'failed') {
+        await Promise.all([checkHealth(), loadStats()]);
       }
-
-      await loadStats();
     } catch (err) {
       console.error('Failed to sync:', err);
-    } finally {
       setSyncing(false);
-      persistSyncState(false, currentStatus, currentDetails);
+      setSyncJobId(null);
+
+      const errorMessage = err instanceof Error ? err.message : 'Sync failed';
+      const failedStatus = { ...currentStatus, openrouter: 'error' } as Record<string, SyncState>;
+      const failedDetails = { openrouter: errorMessage };
+      setSyncStatus(failedStatus);
+      setSyncDetails(failedDetails);
+      persistSyncState(false, failedStatus, failedDetails, null);
     }
   };
 

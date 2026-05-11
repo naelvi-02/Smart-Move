@@ -3,17 +3,157 @@ Models API Router
 
 Endpoints for model listing, filtering, and syncing.
 """
+import asyncio
+from datetime import datetime
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 import re
 from typing import Any, List, Optional, cast
-from database import get_db
+from database import SessionLocal, get_db
 from models import Model
-from schemas import ModelResponse, ModelFilter, SyncResponse, PaginatedModelResponse, ImageModelDetailsResponse
+from schemas import (
+    ImageModelDetailsResponse,
+    ModelFilter,
+    ModelResponse,
+    PaginatedModelResponse,
+    SyncJobStartResponse,
+    SyncJobStatusResponse,
+    SyncResponse,
+)
 from adapters import openrouter, novita, civitai
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+SYNC_JOB_STATUS: dict[str, dict[str, Any]] = {}
+
+
+def build_sync_source_state(source: str) -> dict[str, Any]:
+    return {
+        "source": source,
+        "status": "idle",
+        "models_synced": 0,
+        "models_updated": 0,
+        "errors": [],
+        "detail": None,
+    }
+
+
+def update_sync_job_timestamp(job_id: str) -> None:
+    job = SYNC_JOB_STATUS.get(job_id)
+    if not job:
+        return
+    job["updated_at"] = datetime.utcnow()
+
+
+def summarize_sync_result(result: SyncResponse) -> str:
+    summary = f"{result.models_synced} new, {result.models_updated} updated"
+    if result.errors:
+        summary = f"{summary}, {len(result.errors)} errors"
+    return summary
+
+
+def mark_sync_job_source(
+    job_id: str,
+    source_key: str,
+    *,
+    status: str,
+    detail: Optional[str] = None,
+    models_synced: Optional[int] = None,
+    models_updated: Optional[int] = None,
+    errors: Optional[List[str]] = None,
+) -> None:
+    job = SYNC_JOB_STATUS.get(job_id)
+    if not job:
+        return
+
+    source = cast(dict[str, Any], job["sources"][source_key])
+    source["status"] = status
+    if detail is not None:
+        source["detail"] = detail
+    if models_synced is not None:
+        source["models_synced"] = models_synced
+    if models_updated is not None:
+        source["models_updated"] = models_updated
+    if errors is not None:
+        source["errors"] = errors
+    update_sync_job_timestamp(job_id)
+
+
+async def run_sync_job(job_id: str) -> None:
+    db = SessionLocal()
+
+    try:
+        job = SYNC_JOB_STATUS[job_id]
+        job["status"] = "running"
+        update_sync_job_timestamp(job_id)
+
+        steps = [
+            ("openrouter", sync_openrouter_models),
+            ("civitai", sync_civitai_models),
+            ("novita", sync_novita_models),
+        ]
+        encountered_errors = False
+
+        for source_key, runner in steps:
+            job["current_source"] = source_key
+            mark_sync_job_source(job_id, source_key, status="syncing", detail="Syncing...")
+
+            try:
+                result = await runner(db=db)
+                detail = summarize_sync_result(result)
+
+                if source_key == "openrouter":
+                    try:
+                        score_result = await sync_nsfw_scores(db=db)
+                        detail = f"{detail} · scores updated {score_result['updated']}"
+                    except Exception as error:
+                        encountered_errors = True
+                        score_error = str(error)
+                        existing_errors = list(result.errors)
+                        existing_errors.append(f"NSFW score sync failed: {score_error}")
+                        result.errors = existing_errors
+                        detail = f"{detail} · score sync failed"
+
+                if result.errors:
+                    encountered_errors = True
+
+                mark_sync_job_source(
+                    job_id,
+                    source_key,
+                    status="success" if not result.errors else "error",
+                    detail=detail,
+                    models_synced=result.models_synced,
+                    models_updated=result.models_updated,
+                    errors=result.errors,
+                )
+            except Exception as error:
+                encountered_errors = True
+                error_message = str(error)
+                job["last_error"] = error_message
+                mark_sync_job_source(
+                    job_id,
+                    source_key,
+                    status="error",
+                    detail=error_message,
+                    errors=[error_message],
+                )
+
+        job["status"] = "completed_with_errors" if encountered_errors else "completed"
+        job["current_source"] = None
+        job["finished_at"] = datetime.utcnow()
+        update_sync_job_timestamp(job_id)
+    except Exception as error:
+        job = SYNC_JOB_STATUS.get(job_id)
+        if job:
+            job["status"] = "failed"
+            job["current_source"] = None
+            job["last_error"] = str(error)
+            job["finished_at"] = datetime.utcnow()
+            update_sync_job_timestamp(job_id)
+    finally:
+        db.close()
 
 
 def normalize_model_name(name: Optional[str]) -> str:
@@ -396,7 +536,7 @@ async def sync_openrouter_models(db: Session = Depends(get_db)):
 
 @router.post("/sync/civitai", response_model=SyncResponse)
 async def sync_civitai_models(
-    max_pages: int = Query(6, description="Maximum pages to fetch"),
+    max_pages: int = 6,
     db: Session = Depends(get_db)
 ):
     """
@@ -531,6 +671,40 @@ async def sync_novita_models(db: Session = Depends(get_db)):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sync/jobs", response_model=SyncJobStartResponse)
+async def start_sync_job():
+    job_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+    SYNC_JOB_STATUS[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "current_source": None,
+        "sources": {
+            "openrouter": build_sync_source_state("openrouter"),
+            "civitai": build_sync_source_state("civitai"),
+            "novita": build_sync_source_state("novita"),
+        },
+        "last_error": None,
+        "started_at": now,
+        "updated_at": now,
+        "finished_at": None,
+    }
+    asyncio.create_task(run_sync_job(job_id))
+    return SyncJobStartResponse(
+        job_id=job_id,
+        status="queued",
+        message="Sync job queued for OpenRouter, Civitai, and Novita",
+    )
+
+
+@router.get("/sync/jobs/{job_id}", response_model=SyncJobStatusResponse)
+async def get_sync_job_status(job_id: str):
+    job = SYNC_JOB_STATUS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Sync job not found")
+    return cast(SyncJobStatusResponse, job)
 
 
 @router.post("/sync/all")

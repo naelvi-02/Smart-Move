@@ -168,6 +168,26 @@ export interface SyncResponse {
   errors: string[];
 }
 
+export interface SyncJobSourceStatus {
+  source: string;
+  status: 'idle' | 'syncing' | 'success' | 'error';
+  models_synced: number;
+  models_updated: number;
+  errors: string[];
+  detail: string | null;
+}
+
+export interface SyncJobStatus {
+  job_id: string;
+  status: 'queued' | 'running' | 'completed' | 'completed_with_errors' | 'failed';
+  current_source: string | null;
+  sources: Record<string, SyncJobSourceStatus>;
+  last_error: string | null;
+  started_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const tauriRuntime = isTauriRuntime();
 
@@ -260,6 +280,10 @@ export const modelsApi = {
   get: (modelId: string) => fetchApi<Model>(`/api/models/${encodeURIComponent(modelId)}`),
 
   syncAll: () => fetchApi<{ results: Array<{ source: string; status: string }> }>('/api/models/sync/all', { method: 'POST' }),
+
+  startSyncJob: () => fetchApi<{ job_id: string; status: string; message: string }>('/api/models/sync/jobs', { method: 'POST' }),
+
+  getSyncJob: (jobId: string) => fetchApi<SyncJobStatus>(`/api/models/sync/jobs/${encodeURIComponent(jobId)}`),
 
   syncOpenRouter: () => fetchApi<SyncResponse>('/api/models/sync/openrouter', { method: 'POST' }),
 

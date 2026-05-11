@@ -193,3 +193,32 @@ class SyncResponse(BaseModel):
     models_synced: int
     models_updated: int
     errors: List[str] = []
+
+
+class SyncJobSourceStatus(BaseModel):
+    """Progress details for one sync source."""
+    source: str
+    status: str
+    models_synced: int = 0
+    models_updated: int = 0
+    errors: List[str] = []
+    detail: Optional[str] = None
+
+
+class SyncJobStartResponse(BaseModel):
+    """Response returned when a sync job is queued."""
+    job_id: str
+    status: str
+    message: str
+
+
+class SyncJobStatusResponse(BaseModel):
+    """Current state of a background sync job."""
+    job_id: str
+    status: str
+    current_source: Optional[str] = None
+    sources: dict[str, SyncJobSourceStatus]
+    last_error: Optional[str] = None
+    started_at: datetime
+    updated_at: datetime
+    finished_at: Optional[datetime] = None
