@@ -5,7 +5,7 @@ Fetches image generation model data from Novita API.
 LLM data is sourced exclusively from OpenRouter.
 """
 import httpx
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, cast
 from config import get_settings
 from . import civitai
 
@@ -164,6 +164,13 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
             "preview_image_url": civitai_data.get("preview_image_url"),
             "nsfw_flag": bool(result["nsfw_flag"] or civitai_data.get("nsfw_flag", False)),
         })
+
+        linked_civitai_data = dict(civitai_data)
+        linked_civitai_data["available_in_novita"] = True
+        linked_civitai_data["nsfw_flag"] = bool(
+            linked_civitai_data.get("nsfw_flag", False) or result["nsfw_flag"]
+        )
+        cast(Dict[str, Any], result)["_linked_civitai_data"] = linked_civitai_data
     else:
         # Fallback: Use Novita's categories and enhanced keyword matching
         categories = raw.get("categories", [])

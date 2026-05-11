@@ -115,6 +115,22 @@ def refresh_civitai_novita_availability(db: Session) -> int:
     return updated_models
 
 
+def upsert_linked_civitai_model(db: Session, data: dict[str, Any]) -> bool:
+    existing = db.query(Model).filter(
+        Model.model_id == data["model_id"],
+        Model.source == "civitai"
+    ).first()
+
+    if existing:
+        for key, value in data.items():
+            if value is not None:
+                setattr(existing, key, value)
+        return False
+
+    db.add(Model(**data))
+    return True
+
+
 def apply_tier_filter(query, tier: str):
     if tier == "free":
         return query.filter(
@@ -442,10 +458,14 @@ async def sync_novita_models(db: Session = Depends(get_db)):
         
         synced = 0
         updated = 0
+        civitai_linked_synced = 0
+        civitai_linked_updated = 0
         errors = []
         
         for data in models_data:
             try:
+                linked_civitai_data = cast(Optional[dict[str, Any]], data.pop("_linked_civitai_data", None))
+
                 existing = db.query(Model).filter(
                     Model.model_id == data["model_id"],
                     Model.source == "novita"
@@ -460,6 +480,13 @@ async def sync_novita_models(db: Session = Depends(get_db)):
                     model = Model(**data)
                     db.add(model)
                     synced += 1
+
+                if linked_civitai_data:
+                    created = upsert_linked_civitai_model(db, linked_civitai_data)
+                    if created:
+                        civitai_linked_synced += 1
+                    else:
+                        civitai_linked_updated += 1
             except Exception as e:
                 errors.append(f"Error syncing {data.get('model_id', 'unknown')}: {str(e)}")
 
@@ -469,8 +496,8 @@ async def sync_novita_models(db: Session = Depends(get_db)):
         
         return SyncResponse(
             source="novita",
-            models_synced=synced,
-            models_updated=updated,
+            models_synced=synced + civitai_linked_synced,
+            models_updated=updated + civitai_linked_updated,
             errors=errors
         )
     except Exception as e:
