@@ -96,8 +96,9 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
     if not model_id:
         return None
     
-    # Try to extract Civitai ID from sd_name (format: modelname_123456.safetensors)
+    # Try to extract Civitai model ID from sd_name (format: modelname_123456.safetensors)
     civitai_id = None
+    civitai_version_id = raw.get("civitai_version_id")
     model_name = raw.get("model_name", "")
     
     # Extract number from sd_name (e.g., "epicrealism_naturalSinRC1VAE_106430.safetensors" -> 106430)
@@ -108,16 +109,28 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
         if len(potential_id) >= 4:  # Civitai IDs are typically 4+ digits
             civitai_id = int(potential_id)
     
-    # Try to enrich with Civitai metadata if we found an ID
+    # Try to enrich with Civitai metadata.
+    # Prefer direct model ID from sd_name, but fall back to Novita's mapped
+    # Civitai version ID when available.
     civitai_data = None
     if civitai_id:
         try:
-            # Use the model ID directly (not version ID)
             civitai_data = await civitai.get_model_by_id(civitai_id)
             if civitai_data:
                 print(f"✓ Enriched '{raw.get('name')}' with Civitai #{civitai_id}")
-        except Exception as e:
+        except Exception:
             # Silently fail - not all numbers are valid Civitai IDs
+            pass
+
+    if not civitai_data and civitai_version_id:
+        try:
+            version_id = int(civitai_version_id)
+            civitai_data = await civitai.get_model_by_version_id(version_id)
+            if civitai_data:
+                print(f"✓ Enriched '{raw.get('name')}' with Civitai version #{version_id}")
+        except (TypeError, ValueError):
+            pass
+        except Exception:
             pass
     
     # Base data from Novita
@@ -137,15 +150,19 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
     
     # Enrich with Civitai data if available
     if civitai_data:
-        # Use Civitai's richer metadata
+        # Use Civitai's richer metadata and canonical model naming so
+        # cross-source matching is more stable.
         result.update({
+            "name": civitai_data.get("name") or result["name"],
             "description": civitai_data.get("description") or result["description"],
             "tags": civitai_data.get("tags") or result["tags"],
+            "base_model": civitai_data.get("base_model") or result["base_model"],
             "style_bucket": civitai_data.get("style_bucket", "other"),
             "download_count": civitai_data.get("download_count", 0),
             "favorite_count": civitai_data.get("favorite_count", 0),
             "popularity_score": civitai_data.get("popularity_score", 0),
             "preview_image_url": civitai_data.get("preview_image_url"),
+            "nsfw_flag": bool(result["nsfw_flag"] or civitai_data.get("nsfw_flag", False)),
         })
     else:
         # Fallback: Use Novita's categories and enhanced keyword matching

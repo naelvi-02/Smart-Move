@@ -350,12 +350,24 @@ async def get_model_gallery_images(model_id: int, limit: int = 6) -> List[str]:
         return []
 
 
-async def fetch_all_models(max_pages: int = 5) -> List[Dict[str, Any]]:
+async def fetch_all_models(
+    max_pages: int = 5,
+    types: Optional[List[str]] = None,
+    sort: str = "Highest Rated",
+    nsfw: Optional[bool] = None,
+    base_models: Optional[List[str]] = None,
+    tag: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Fetch multiple pages of models from Civitai.
     
     Args:
         max_pages: Maximum number of pages to fetch.
+        types: Filter by model types (Checkpoint, LORA, etc.).
+        sort: Sort order (Highest Rated, Most Downloaded, Newest).
+        nsfw: Filter by NSFW status.
+        base_models: Filter by base model families.
+        tag: Optional tag filter.
         
     Returns:
         List of all fetched models.
@@ -363,7 +375,15 @@ async def fetch_all_models(max_pages: int = 5) -> List[Dict[str, Any]]:
     all_models = []
     
     for page in range(1, max_pages + 1):
-        result = await fetch_models(limit=100, page=page)
+        result = await fetch_models(
+            limit=100,
+            page=page,
+            types=types,
+            sort=sort,
+            nsfw=nsfw,
+            base_models=base_models,
+            tag=tag,
+        )
         models = result.get("models", [])
         
         if not models:

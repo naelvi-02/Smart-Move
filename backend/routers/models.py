@@ -380,14 +380,19 @@ async def sync_openrouter_models(db: Session = Depends(get_db)):
 
 @router.post("/sync/civitai", response_model=SyncResponse)
 async def sync_civitai_models(
-    max_pages: int = Query(3, description="Maximum pages to fetch"),
+    max_pages: int = Query(6, description="Maximum pages to fetch"),
     db: Session = Depends(get_db)
 ):
     """
     Sync models from Civitai API.
     """
     try:
-        models_data = await civitai.fetch_all_models(max_pages=max_pages)
+        models_data = await civitai.fetch_all_models(
+            max_pages=max_pages,
+            types=["Checkpoint"],
+            sort="Highest Rated",
+            nsfw=True,
+        )
         
         synced = 0
         updated = 0
