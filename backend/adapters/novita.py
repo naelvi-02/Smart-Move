@@ -96,8 +96,10 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
     if not model_id:
         return None
     
-    # Try to extract Civitai model ID from sd_name (format: modelname_123456.safetensors)
-    civitai_id = None
+    # Try to extract a Civitai reference from sd_name.
+    # In practice this trailing number is often a Civitai version ID,
+    # not always the parent model ID.
+    civitai_reference = None
     civitai_version_id = raw.get("civitai_version_id")
     model_name = raw.get("model_name", "")
     
@@ -107,22 +109,14 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
     if match:
         potential_id = match.group(1)
         if len(potential_id) >= 4:  # Civitai IDs are typically 4+ digits
-            civitai_id = int(potential_id)
+            civitai_reference = int(potential_id)
     
     # Try to enrich with Civitai metadata.
-    # Prefer direct model ID from sd_name, but fall back to Novita's mapped
-    # Civitai version ID when available.
+    # Prefer Novita's explicit version mapping when present. Otherwise treat
+    # the numeric suffix in sd_name as a probable version ID first, then fall
+    # back to a direct model lookup.
     civitai_data = None
-    if civitai_id:
-        try:
-            civitai_data = await civitai.get_model_by_id(civitai_id)
-            if civitai_data:
-                print(f"✓ Enriched '{raw.get('name')}' with Civitai #{civitai_id}")
-        except Exception:
-            # Silently fail - not all numbers are valid Civitai IDs
-            pass
-
-    if not civitai_data and civitai_version_id:
+    if civitai_version_id:
         try:
             version_id = int(civitai_version_id)
             civitai_data = await civitai.get_model_by_version_id(version_id)
@@ -131,6 +125,23 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
         except (TypeError, ValueError):
             pass
         except Exception:
+            pass
+
+    if not civitai_data and civitai_reference:
+        try:
+            civitai_data = await civitai.get_model_by_version_id(civitai_reference)
+            if civitai_data:
+                print(f"✓ Enriched '{raw.get('name')}' with Civitai version #{civitai_reference}")
+        except Exception:
+            pass
+
+    if not civitai_data and civitai_reference:
+        try:
+            civitai_data = await civitai.get_model_by_id(civitai_reference)
+            if civitai_data:
+                print(f"✓ Enriched '{raw.get('name')}' with Civitai model #{civitai_reference}")
+        except Exception:
+            # Silently fail - not all numbers are valid Civitai identifiers
             pass
     
     # Base data from Novita
