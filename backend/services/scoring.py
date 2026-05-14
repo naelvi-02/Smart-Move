@@ -3,7 +3,7 @@ Scoring Engine
 
 Calculates model scores and tier recommendations based on metrics.
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, cast
 from sqlalchemy.orm import Session
 from models import Model, ModelMetric, BenchmarkResult
 
@@ -28,6 +28,8 @@ def calculate_model_score(
     Returns:
         Dictionary with score breakdown and tier recommendation.
     """
+    model_obj = cast(Any, model)
+    metrics_obj = cast(Any, metrics) if metrics is not None else None
     scores = {
         "cost_score": 0.0,
         "context_score": 0.0,
@@ -40,8 +42,8 @@ def calculate_model_score(
     
     # ============ Cost Score (0-25 points) ============
     # Lower price = higher score
-    if model.effective_price_1m is not None:
-        price = model.effective_price_1m
+    if getattr(model_obj, "effective_price_1m", None) is not None:
+        price = float(getattr(model_obj, "effective_price_1m", 0) or 0)
         if price <= 0:
             scores["cost_score"] = 25.0  # Free models get max score
         elif price <= 0.5:
@@ -59,7 +61,7 @@ def calculate_model_score(
     
     # ============ Context Window Score (0-10 points) ============
     # Larger context = more versatile for long docs, RAG, roleplay
-    ctx = model.context_length or 0
+    ctx = int(getattr(model_obj, "context_length", 0) or 0)
     if ctx >= 128000:
         scores["context_score"] = 10.0
     elif ctx >= 64000:
@@ -74,8 +76,8 @@ def calculate_model_score(
         scores["context_score"] = 0.0
 
     # ============ Stability Score (0-20 points) ============
-    if metrics and metrics.error_rate is not None:
-        error_rate = metrics.error_rate
+    if metrics_obj is not None and getattr(metrics_obj, "error_rate", None) is not None:
+        error_rate = float(getattr(metrics_obj, "error_rate", 0) or 0)
         if error_rate < 0.01:
             scores["stability_score"] = 20.0
         elif error_rate < 0.05:
@@ -90,8 +92,8 @@ def calculate_model_score(
         scores["stability_score"] = 8.0  # Default for unknown (slightly below average)
     
     # ============ Latency Score (0-15 points) ============
-    if metrics and metrics.avg_latency_ms is not None:
-        latency = metrics.avg_latency_ms
+    if metrics_obj is not None and getattr(metrics_obj, "avg_latency_ms", None) is not None:
+        latency = float(getattr(metrics_obj, "avg_latency_ms", 0) or 0)
         if latency < 500:
             scores["latency_score"] = 15.0
         elif latency < 1000:
@@ -106,7 +108,7 @@ def calculate_model_score(
         scores["latency_score"] = 5.0  # Default for unknown (slightly below average)
     
     # ============ Instruction Following Score (0-20 points) ============
-    if benchmarks:
+    if benchmarks is not None and len(benchmarks) > 0:
         instruction_benchmarks = [b for b in benchmarks if b.benchmark_type in ["instruction_en", "formatting", "verbosity_short", "verbosity_detailed"]]
         if instruction_benchmarks:
             avg_score = sum(b.score or 0 for b in instruction_benchmarks) / len(instruction_benchmarks)
@@ -116,7 +118,7 @@ def calculate_model_score(
     
     # ============ Language Score (0-10 points) ============
     # Indonesian language support
-    if benchmarks:
+    if benchmarks is not None and len(benchmarks) > 0:
         id_benchmarks = [b for b in benchmarks if b.benchmark_type == "instruction_id"]
         if id_benchmarks:
             avg_score = sum(b.score or 0 for b in id_benchmarks) / len(id_benchmarks)
@@ -125,8 +127,8 @@ def calculate_model_score(
         scores["language_score"] = 3.0  # Default for unknown (slightly below average)
     
     # ============ Refusal Penalty (0-10 points deducted) ============
-    if metrics and metrics.refusal_rate is not None:
-        refusal_rate = metrics.refusal_rate
+    if metrics_obj is not None and getattr(metrics_obj, "refusal_rate", None) is not None:
+        refusal_rate = float(getattr(metrics_obj, "refusal_rate", 0) or 0)
         scores["refusal_penalty"] = min(refusal_rate * 50, 10.0)  # Max 10 point penalty
     
     # ============ Calculate Final Score ============
@@ -316,13 +318,24 @@ VLM_KEYWORDS = [
 
 NSFW_MODEL_KEYWORDS = [
     "dolphin", "cydonia", "venice", "mythomax", "mythomist", "noromaid",
-    "grok", "abliterated", "uncensor", "nsfw", "lumimaid", "stheno",
-    "euryale", "midnight", "rosa", "pygmalion", "airoboros-l2-c"
+    "abliterated", "uncensor", "nsfw", "lumimaid", "stheno",
+    "euryale", "midnight", "rosa", "pygmalion", "airoboros-l2-c",
+    "hermes", "magnum", "maid", "roleplay"
+]
+
+NSFW_WEAK_KEYWORDS = [
+    "grok", "evil", "dark", "spicy"
 ]
 
 NSFW_PROVIDERS = [
     "nousresearch", "cognitivecomputations", "undi95", "gryphe", 
     "sao10k", "thedrummer", "pygmalionai", "neversleep"
+]
+
+NSFW_DESCRIPTION_KEYWORDS = [
+    "uncensored", "unfiltered", "reduced refusal", "reduced refusal rates",
+    "less refusal", "fewer refusals", "roleplay", "erp", "erotica",
+    "sexual", "nsfw", "steerability"
 ]
 
 GOOD_INDONESIAN_MODELS = [
@@ -370,21 +383,30 @@ def calculate_nsfw_score(model: Model) -> float:
     
     model_id_lower = (model.model_id or "").lower()
     name_lower = (model.name or "").lower()
+    desc_lower = (model.description or "").lower()
     provider_lower = (model.provider or "").lower()
     combined = f"{model_id_lower} {name_lower}"
     
     # Unmoderated = big bonus
     if model.is_moderated is False:
-        score += 40
-    
-    # Known NSFW model names
+        score += 35
+
+    # Strong NSFW-friendly model families
     if any(kw in combined for kw in NSFW_MODEL_KEYWORDS):
-        score += 30
-    
+        score += 22
+
+    # Weaker indicators should not dominate the ranking on their own.
+    if any(kw in combined for kw in NSFW_WEAK_KEYWORDS):
+        score += 8
+
     # Known NSFW-friendly providers
     if any(p in provider_lower for p in NSFW_PROVIDERS):
+        score += 18
+
+    # Description clues from provider metadata often reveal refusal posture.
+    if any(kw in desc_lower for kw in NSFW_DESCRIPTION_KEYWORDS):
         score += 15
-    
+
     # High context = good for roleplay
     context = model.context_length or 0
     if context >= 128000:

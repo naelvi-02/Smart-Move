@@ -29,6 +29,7 @@ const EST_TOKENS_PER_BENCHMARK = 1800;
 const NSFW_KEYWORDS = ['dolphin', 'cydonia', 'venice', 'grok', 'abliterated', 'uncensor', 'nsfw', 'mistral-nemo'];
 const CODING_KEYWORDS = ['code', 'coder', 'codestral', 'deepseek', 'qwen2.5-coder', 'starcoder', 'wizard', 'magicoder'];
 const MODEL_SKELETON_KEYS = ['model-skeleton-1', 'model-skeleton-2', 'model-skeleton-3', 'model-skeleton-4', 'model-skeleton-5'];
+const BENCHMARK_JOB_STORAGE_KEY = 'smart-move-benchmark-job';
 
 const ResultCard = ({ result, delay }: any) => {
     const getStatusConfig = (status: string) => {
@@ -94,6 +95,21 @@ export default function Benchmarks() {
     const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
     const [search, setSearch] = useState('');
 
+    const persistBenchmarkJob = useCallback((job: BenchmarkJobStatus | null, isRunning: boolean) => {
+        if (typeof window === 'undefined') return;
+
+        if (!job) {
+            window.localStorage.removeItem(BENCHMARK_JOB_STORAGE_KEY);
+            return;
+        }
+
+        window.localStorage.setItem(BENCHMARK_JOB_STORAGE_KEY, JSON.stringify({
+            job,
+            running: isRunning,
+            savedAt: Date.now(),
+        }));
+    }, []);
+
     const loadData = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         try {
             if (mode === 'initial') {
@@ -120,6 +136,29 @@ export default function Benchmarks() {
     useEffect(() => {
         loadData('initial');
     }, [loadData]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        try {
+            const raw = window.localStorage.getItem(BENCHMARK_JOB_STORAGE_KEY);
+            if (!raw) return;
+
+            const parsed = JSON.parse(raw) as { job?: BenchmarkJobStatus; running?: boolean; savedAt?: number };
+            if (!parsed.job) return;
+
+            const isRecent = typeof parsed.savedAt === 'number' && Date.now() - parsed.savedAt < 1000 * 60 * 60;
+            if (!isRecent) {
+                window.localStorage.removeItem(BENCHMARK_JOB_STORAGE_KEY);
+                return;
+            }
+
+            setActiveJob(parsed.job);
+            setRunning(Boolean(parsed.running) && !['completed', 'completed_with_errors', 'failed'].includes(parsed.job.status));
+        } catch {
+            window.localStorage.removeItem(BENCHMARK_JOB_STORAGE_KEY);
+        }
+    }, []);
 
     // Smart filtering based on priority
     const filteredModels = useMemo(() => {
@@ -193,7 +232,7 @@ export default function Benchmarks() {
         try {
             setRunning(true);
             const job = await benchmarksApi.run(selectedModels);
-            setActiveJob({
+            const nextJob = {
                 job_id: job.job_id,
                 status: job.status,
                 model_ids: job.models,
@@ -206,7 +245,9 @@ export default function Benchmarks() {
                 total_benchmarks: job.models.length * job.benchmark_types.length,
                 last_error: null,
                 updated_at: new Date().toISOString(),
-            });
+            };
+            setActiveJob(nextJob);
+            persistBenchmarkJob(nextJob, true);
         } catch (err) {
             console.error('Failed to run benchmarks:', err);
             setRunning(false);
@@ -220,8 +261,10 @@ export default function Benchmarks() {
             try {
                 const job = await benchmarksApi.getJob(activeJob.job_id);
                 setActiveJob(job);
+                const stillRunning = !['completed', 'completed_with_errors', 'failed'].includes(job.status);
+                persistBenchmarkJob(job, stillRunning);
                 await loadData('refresh');
-                if (job.status === 'completed' || job.status === 'completed_with_errors' || job.status === 'failed') {
+                if (!stillRunning) {
                     setRunning(false);
                 }
             } catch (error) {
@@ -231,7 +274,7 @@ export default function Benchmarks() {
         }, 5000);
 
         return () => window.clearInterval(interval);
-    }, [activeJob?.job_id, running, loadData]);
+    }, [activeJob?.job_id, running, loadData, persistBenchmarkJob]);
 
     const updateScores = async () => {
         try {
