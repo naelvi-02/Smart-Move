@@ -174,9 +174,10 @@ export default function ImageExplorer() {
                                 }}
                                 className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                             >
-                                <option value="popular">Highest Rated</option>
+                                <option value="popular">Best Overall</option>
                                 <option value="downloads">Most Downloaded</option>
                                 <option value="likes">Most Liked</option>
+                                <option value="newest">Newest Synced</option>
                             </select>
                         </div>
 

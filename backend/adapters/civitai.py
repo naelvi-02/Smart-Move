@@ -33,6 +33,14 @@ def _extract_gallery_images(images: List[Dict[str, Any]], limit: int = 6) -> Lis
     return gallery_images
 
 
+def _get_stat_value(stats: Dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = stats.get(key)
+        if isinstance(value, (int, float)):
+            return int(value)
+    return 0
+
+
 async def fetch_models(
     limit: int = 100,
     page: int = 1,
@@ -136,6 +144,7 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     tags = raw.get("tags", [])
     style_bucket = determine_style_bucket(tags, raw.get("type", ""))
     
+    stats = raw.get("stats", {})
     return {
         "source": "civitai",
         "model_id": str(model_id),
@@ -148,9 +157,9 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "nsfw_flag": raw.get("nsfw", False),
         "tags": tags,
         "style_bucket": style_bucket,
-        "download_count": raw.get("stats", {}).get("downloadCount", 0),
-        "favorite_count": raw.get("stats", {}).get("favoriteCount", 0),
-        "popularity_score": calculate_popularity_score(raw.get("stats", {})),
+        "download_count": _get_stat_value(stats, "downloadCount"),
+        "favorite_count": _get_stat_value(stats, "favoriteCount", "thumbsUpCount", "likeCount"),
+        "popularity_score": calculate_popularity_score(stats),
         "preview_image_url": preview_image_url,
     }
 
@@ -266,19 +275,22 @@ def calculate_popularity_score(stats: Dict[str, Any]) -> int:
     Returns:
         Popularity score (0-100).
     """
-    downloads = stats.get("downloadCount", 0)
-    favorites = stats.get("favoriteCount", 0)
+    downloads = _get_stat_value(stats, "downloadCount")
+    favorites = _get_stat_value(stats, "favoriteCount", "thumbsUpCount", "likeCount")
+    thumbs_up = _get_stat_value(stats, "thumbsUpCount", "likeCount", "favoriteCount")
+    comments = _get_stat_value(stats, "commentCount")
     rating = stats.get("rating", 0)
     rating_count = stats.get("ratingCount", 0)
     
     # Weighted score calculation
     # Downloads are most indicative, then favorites, then ratings
     download_score = min(downloads / 10000 * 40, 40)  # Max 40 points
-    favorite_score = min(favorites / 1000 * 30, 30)   # Max 30 points
+    favorite_score = min(favorites / 1000 * 20, 20)   # Max 20 points
+    social_score = min((thumbs_up + comments) / 500 * 20, 20)  # Max 20 points
     rating_score = (rating / 5) * 20 if rating_count > 10 else 0  # Max 20 points
     engagement_score = min(rating_count / 100 * 10, 10)  # Max 10 points
     
-    return int(download_score + favorite_score + rating_score + engagement_score)
+    return int(download_score + favorite_score + social_score + rating_score + engagement_score)
 
 
 async def get_model_by_id(model_id: int, base_url: Optional[str] = None) -> Optional[Dict[str, Any]]:

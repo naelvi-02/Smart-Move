@@ -396,6 +396,7 @@ async def list_llm_models(
         search_term = f"%{search}%"
         query = query.filter(
             (Model.name.ilike(search_term)) | 
+            (Model.description.ilike(search_term)) |
             (Model.model_id.ilike(search_term))
         )
     
@@ -418,7 +419,7 @@ async def list_llm_models(
 async def list_image_models(
     source: Optional[str] = Query(None, description="civitai or novita"),
     style_bucket: Optional[str] = Query(None),
-    sort_by: Optional[str] = Query("popular", description="popular, downloads, likes"),
+    sort_by: Optional[str] = Query("popular", description="popular, downloads, likes, newest"),
     available_in_novita: Optional[bool] = Query(None, description="Filter models available in Novita"),
     skip: int = 0,
     limit: int = 100,
@@ -426,7 +427,7 @@ async def list_image_models(
 ):
     """
     List image models only with total count.
-    Supports sorting: popular (highest rated), downloads, likes.
+    Supports sorting: popular, downloads, likes, newest.
     """
     query = db.query(Model).filter(Model.type == "image")
     
@@ -445,6 +446,8 @@ async def list_image_models(
         query = query.order_by(Model.download_count.desc().nullslast())
     elif sort_by == "likes":
         query = query.order_by(Model.favorite_count.desc().nullslast())
+    elif sort_by == "newest":
+        query = query.order_by(Model.updated_at.desc().nullslast(), Model.created_at.desc().nullslast())
     else:  # default: "popular" (highest rated)
         query = query.order_by(Model.popularity_score.desc().nullslast())
     
@@ -549,13 +552,19 @@ async def sync_civitai_models(
             sort="Highest Rated",
             nsfw=True,
         )
+        newest_models = await civitai.fetch_all_models(
+            max_pages=max(2, min(max_pages, 4)),
+            types=["Checkpoint"],
+            sort="Newest",
+            nsfw=True,
+        )
         nsfw_models = await civitai.fetch_nsfw_models_from_images(
             max_pages=max(2, min(max_pages, 4)),
             base_url=getattr(civitai.settings, "civitai_nsfw_base_url", None),
         )
 
         merged_models: dict[str, dict[str, Any]] = {}
-        for data in primary_models + nsfw_models:
+        for data in primary_models + newest_models + nsfw_models:
             model_key = str(data.get("model_id", ""))
             if not model_key:
                 continue
