@@ -420,6 +420,7 @@ async def list_image_models(
     source: Optional[str] = Query(None, description="civitai or novita"),
     style_bucket: Optional[str] = Query(None),
     sort_by: Optional[str] = Query("popular", description="popular, downloads, likes, newest"),
+    search: Optional[str] = Query(None, description="Search image models by name, description, base model, or ID"),
     available_in_novita: Optional[bool] = Query(None, description="Filter models available in Novita"),
     nsfw_only: Optional[bool] = Query(None, description="Filter image models by NSFW flag"),
     skip: int = 0,
@@ -436,6 +437,16 @@ async def list_image_models(
         query = query.filter(Model.source == source)
     if style_bucket:
         query = query.filter(Model.style_bucket == style_bucket)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                Model.name.ilike(search_term),
+                Model.description.ilike(search_term),
+                Model.model_id.ilike(search_term),
+                Model.base_model.ilike(search_term),
+            )
+        )
     if available_in_novita is not None:
         query = query.filter(Model.available_in_novita == available_in_novita)
     if nsfw_only is not None:

@@ -8,6 +8,7 @@ import {
     AlertOctagon,
     Download,
     Heart,
+    Search,
     Palette,
     ChevronLeft,
     ChevronRight
@@ -23,6 +24,8 @@ export default function ImageExplorer() {
     const [source, setSource] = useState('');
     const [styleBucket, setStyleBucket] = useState('');
     const [sortBy, setSortBy] = useState('popular');
+    const [searchInput, setSearchInput] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
     const [availableOnly, setAvailableOnly] = useState(false);
     const [nsfwOnly, setNsfwOnly] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -33,6 +36,14 @@ export default function ImageExplorer() {
     const itemsPerPage = 50;
 
     const getDetailKey = useCallback((model: Model) => `${model.source}:${model.model_id}`, []);
+
+    useEffect(() => {
+        const timeoutId = window.setTimeout(() => {
+            setSearchTerm(searchInput.trim());
+        }, 250);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [searchInput]);
 
     const loadModels = useCallback(async () => {
         try {
@@ -46,6 +57,7 @@ export default function ImageExplorer() {
             };
             if (source) params.source = source;
             if (styleBucket) params.style_bucket = styleBucket;
+            if (searchTerm) params.search = searchTerm;
             if (availableOnly) params.available_in_novita = 'true';
             if (nsfwOnly) params.nsfw_only = 'true';
 
@@ -59,7 +71,7 @@ export default function ImageExplorer() {
         } finally {
             setLoading(false);
         }
-    }, [availableOnly, currentPage, nsfwOnly, sortBy, source, styleBucket]);
+    }, [availableOnly, currentPage, nsfwOnly, searchTerm, sortBy, source, styleBucket]);
 
     useEffect(() => {
         loadModels();
@@ -149,8 +161,21 @@ export default function ImageExplorer() {
                 transition={{ delay: 0.2 }}
                 className="glass-panel rounded-2xl overflow-hidden"
             >
-                <div className="p-4 border-b border-white/5 flex justify-between items-center">
-                    <div className="flex items-center gap-4">
+                <div className="p-4 border-b border-white/5 flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="relative min-w-[240px] flex-1 lg:flex-none">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <input
+                                type="text"
+                                value={searchInput}
+                                onChange={(e) => {
+                                    setSearchInput(e.target.value);
+                                    setCurrentPage(1);
+                                }}
+                                placeholder="Search name, base, or model ID"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                            />
+                        </div>
                         <div className="flex items-center gap-3">
                             <span className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-2">Source:</span>
                             <select
