@@ -24,6 +24,7 @@ export default function ImageExplorer() {
     const [styleBucket, setStyleBucket] = useState('');
     const [sortBy, setSortBy] = useState('popular');
     const [availableOnly, setAvailableOnly] = useState(false);
+    const [nsfwOnly, setNsfwOnly] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalModels, setTotalModels] = useState(0);
     const [expandedModel, setExpandedModel] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function ImageExplorer() {
             if (source) params.source = source;
             if (styleBucket) params.style_bucket = styleBucket;
             if (availableOnly) params.available_in_novita = 'true';
+            if (nsfwOnly) params.nsfw_only = 'true';
 
             const response = await modelsApi.listImage(params);
             const data = response as { models?: Model[]; total?: number } | Model[];
@@ -57,7 +59,7 @@ export default function ImageExplorer() {
         } finally {
             setLoading(false);
         }
-    }, [availableOnly, currentPage, sortBy, source, styleBucket]);
+    }, [availableOnly, currentPage, nsfwOnly, sortBy, source, styleBucket]);
 
     useEffect(() => {
         loadModels();
@@ -207,6 +209,36 @@ export default function ImageExplorer() {
                                     availableOnly ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-300'
                                 )}>
                                     Available in Novita
+                                </span>
+                            </label>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                                <div className="relative">
+                                    <input
+                                        type="checkbox"
+                                        checked={nsfwOnly}
+                                        onChange={(e) => {
+                                            setNsfwOnly(e.target.checked);
+                                            setCurrentPage(1);
+                                        }}
+                                        className="sr-only"
+                                    />
+                                    <div className={cn(
+                                        'w-10 h-5 rounded-full transition-colors duration-300',
+                                        nsfwOnly ? 'bg-rose-500/20 border-rose-500/50' : 'bg-white/5 border-white/10 border'
+                                    )} />
+                                    <div className={cn(
+                                        'absolute top-1 left-1 w-3 h-3 rounded-full transition-transform duration-300',
+                                        nsfwOnly ? 'translate-x-5 bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-slate-400'
+                                    )} />
+                                </div>
+                                <span className={cn(
+                                    'text-xs font-medium transition-colors',
+                                    nsfwOnly ? 'text-rose-400' : 'text-slate-400 group-hover:text-slate-300'
+                                )}>
+                                    NSFW Only
                                 </span>
                             </label>
                         </div>

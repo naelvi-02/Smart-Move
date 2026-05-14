@@ -421,6 +421,7 @@ async def list_image_models(
     style_bucket: Optional[str] = Query(None),
     sort_by: Optional[str] = Query("popular", description="popular, downloads, likes, newest"),
     available_in_novita: Optional[bool] = Query(None, description="Filter models available in Novita"),
+    nsfw_only: Optional[bool] = Query(None, description="Filter image models by NSFW flag"),
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db)
@@ -437,6 +438,8 @@ async def list_image_models(
         query = query.filter(Model.style_bucket == style_bucket)
     if available_in_novita is not None:
         query = query.filter(Model.available_in_novita == available_in_novita)
+    if nsfw_only is not None:
+        query = query.filter(Model.nsfw_flag == nsfw_only)
     
     # Get total count before pagination
     total = query.count()
@@ -553,18 +556,27 @@ async def sync_civitai_models(
             nsfw=True,
         )
         newest_models = await civitai.fetch_all_models(
-            max_pages=max(2, min(max_pages, 4)),
+            max_pages=max(4, min(max_pages + 2, 8)),
             types=["Checkpoint"],
             sort="Newest",
             nsfw=True,
         )
+        newest_red_models = await civitai.fetch_all_models(
+            max_pages=max(4, min(max_pages + 2, 8)),
+            types=["Checkpoint"],
+            sort="Newest",
+            nsfw=True,
+            base_url=getattr(civitai.settings, "civitai_nsfw_base_url", None),
+        )
         nsfw_models = await civitai.fetch_nsfw_models_from_images(
-            max_pages=max(2, min(max_pages, 4)),
+            max_pages=max(3, min(max_pages + 1, 6)),
+            period="Week",
+            max_version_ids=180,
             base_url=getattr(civitai.settings, "civitai_nsfw_base_url", None),
         )
 
         merged_models: dict[str, dict[str, Any]] = {}
-        for data in primary_models + newest_models + nsfw_models:
+        for data in primary_models + newest_models + newest_red_models + nsfw_models:
             model_key = str(data.get("model_id", ""))
             if not model_key:
                 continue

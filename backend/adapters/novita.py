@@ -42,8 +42,9 @@ async def fetch_image_models() -> List[Dict[str, Any]]:
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Keep desktop sync responsive; deeper harvests can use a dedicated script later.
-            for page in range(10): 
+            # Background sync jobs can tolerate a deeper harvest so the app
+            # sees newer Novita catalog entries instead of only the earliest pages.
+            for page in range(15): 
                 params = {
                     "filter.types": "checkpoint",
                     "pagination.limit": "100",
