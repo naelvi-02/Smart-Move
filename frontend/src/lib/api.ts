@@ -180,6 +180,7 @@ export interface SyncJobSourceStatus {
 export interface SyncJobStatus {
   job_id: string;
   status: 'queued' | 'running' | 'completed' | 'completed_with_errors' | 'failed';
+  mode?: 'default' | 'deep_images';
   current_source: string | null;
   sources: Record<string, SyncJobSourceStatus>;
   last_error: string | null;
@@ -281,7 +282,8 @@ export const modelsApi = {
 
   syncAll: () => fetchApi<{ results: Array<{ source: string; status: string }> }>('/api/models/sync/all', { method: 'POST' }),
 
-  startSyncJob: () => fetchApi<{ job_id: string; status: string; message: string }>('/api/models/sync/jobs', { method: 'POST' }),
+  startSyncJob: (mode: 'default' | 'deep_images' = 'default') =>
+    fetchApi<{ job_id: string; status: string; mode: string; message: string }>(`/api/models/sync/jobs?mode=${encodeURIComponent(mode)}`, { method: 'POST' }),
 
   getSyncJob: (jobId: string) => fetchApi<SyncJobStatus>(`/api/models/sync/jobs/${encodeURIComponent(jobId)}`),
 

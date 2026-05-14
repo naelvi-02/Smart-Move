@@ -12,7 +12,7 @@ from . import civitai
 settings = get_settings()
 
 
-async def fetch_models() -> List[Dict[str, Any]]:
+async def fetch_models(page_limit: int = 15) -> List[Dict[str, Any]]:
     """
     Fetch image models from Novita API.
     LLMs are sourced from OpenRouter only.
@@ -20,9 +20,9 @@ async def fetch_models() -> List[Dict[str, Any]]:
     Returns:
         List of normalized image model dictionaries.
     """
-    return await fetch_image_models()
+    return await fetch_image_models(page_limit=page_limit)
 
-async def fetch_image_models() -> List[Dict[str, Any]]:
+async def fetch_image_models(page_limit: int = 15) -> List[Dict[str, Any]]:
     """
     Fetch image checkpoint models using user's proven endpoint logic.
     Enriches with Civitai metadata when available for better classification.
@@ -44,7 +44,7 @@ async def fetch_image_models() -> List[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=60.0) as client:
             # Background sync jobs can tolerate a deeper harvest so the app
             # sees newer Novita catalog entries instead of only the earliest pages.
-            for page in range(15): 
+            for page in range(page_limit): 
                 params = {
                     "filter.types": "checkpoint",
                     "pagination.limit": "100",

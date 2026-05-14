@@ -27,6 +27,8 @@ from adapters import openrouter, novita, civitai
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 SYNC_JOB_STATUS: dict[str, dict[str, Any]] = {}
+DEFAULT_SYNC_MODE = "default"
+DEEP_IMAGE_SYNC_MODE = "deep_images"
 
 
 def build_sync_source_state(source: str) -> dict[str, Any]:
@@ -89,15 +91,36 @@ async def run_sync_job(job_id: str) -> None:
         job["status"] = "running"
         update_sync_job_timestamp(job_id)
 
-        steps = [
-            ("openrouter", sync_openrouter_models),
-            ("civitai", sync_civitai_models),
-            ("novita", sync_novita_models),
-        ]
+        mode = cast(str, job.get("mode", DEFAULT_SYNC_MODE))
+        if mode == DEEP_IMAGE_SYNC_MODE:
+            steps = [
+                ("openrouter", None),
+                ("civitai", lambda db: sync_civitai_models(max_pages=12, db=db)),
+                ("novita", lambda db: sync_novita_models(page_limit=30, db=db)),
+            ]
+        else:
+            steps = [
+                ("openrouter", sync_openrouter_models),
+                ("civitai", lambda db: sync_civitai_models(max_pages=6, db=db)),
+                ("novita", lambda db: sync_novita_models(page_limit=15, db=db)),
+            ]
         encountered_errors = False
 
         for source_key, runner in steps:
             job["current_source"] = source_key
+
+            if runner is None:
+                mark_sync_job_source(
+                    job_id,
+                    source_key,
+                    status="success",
+                    detail="Skipped for deep image sync",
+                    models_synced=0,
+                    models_updated=0,
+                    errors=[],
+                )
+                continue
+
             mark_sync_job_source(job_id, source_key, status="syncing", detail="Syncing...")
 
             try:
@@ -649,13 +672,13 @@ async def sync_civitai_models(
 
 
 @router.post("/sync/novita", response_model=SyncResponse)
-async def sync_novita_models(db: Session = Depends(get_db)):
+async def sync_novita_models(page_limit: int = 15, db: Session = Depends(get_db)):
     """
     Sync image generation models from Novita API.
     LLMs are synced exclusively from OpenRouter.
     """
     try:
-        models_data = await novita.fetch_models()
+        models_data = await novita.fetch_models(page_limit=page_limit)
         
         synced = 0
         updated = 0
@@ -706,12 +729,17 @@ async def sync_novita_models(db: Session = Depends(get_db)):
 
 
 @router.post("/sync/jobs", response_model=SyncJobStartResponse)
-async def start_sync_job():
+async def start_sync_job(mode: str = Query(DEFAULT_SYNC_MODE, description="default or deep_images")):
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in {DEFAULT_SYNC_MODE, DEEP_IMAGE_SYNC_MODE}:
+        raise HTTPException(status_code=400, detail="Unsupported sync mode")
+
     job_id = str(uuid.uuid4())
     now = datetime.utcnow()
     SYNC_JOB_STATUS[job_id] = {
         "job_id": job_id,
         "status": "queued",
+        "mode": normalized_mode,
         "current_source": None,
         "sources": {
             "openrouter": build_sync_source_state("openrouter"),
@@ -724,10 +752,16 @@ async def start_sync_job():
         "finished_at": None,
     }
     asyncio.create_task(run_sync_job(job_id))
+
+    message = "Sync job queued for OpenRouter, Civitai, and Novita"
+    if normalized_mode == DEEP_IMAGE_SYNC_MODE:
+        message = "Deep image sync queued for Civitai Red and Novita"
+
     return SyncJobStartResponse(
         job_id=job_id,
         status="queued",
-        message="Sync job queued for OpenRouter, Civitai, and Novita",
+        mode=normalized_mode,
+        message=message,
     )
 
 
@@ -762,7 +796,7 @@ async def sync_all_models(db: Session = Depends(get_db)):
     
     # Sync Novita (image models only)
     try:
-        nov_result = await sync_novita_models(db)
+        nov_result = await sync_novita_models(db=db)
         results.append({"source": "novita", "status": "success", "synced": nov_result.models_synced, "updated": nov_result.models_updated})
     except Exception as e:
         results.append({"source": "novita", "status": "error", "error": str(e)})

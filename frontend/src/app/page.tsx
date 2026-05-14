@@ -58,6 +58,7 @@ const BentoCard = ({ children, className, delay }: any) => (
 
 type SyncState = 'idle' | 'syncing' | 'success' | 'error';
 const DASHBOARD_SYNC_STORAGE_KEY = 'smart-move-dashboard-sync';
+type SyncMode = 'default' | 'deep_images';
 
 const SYNC_SOURCES = [
   { key: 'openrouter', label: 'OpenRouter', accent: 'text-indigo-400' },
@@ -70,6 +71,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncJobId, setSyncJobId] = useState<string | null>(null);
+  const [syncMode, setSyncMode] = useState<SyncMode>('default');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up_to_date' | 'installing' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState('');
@@ -99,18 +101,20 @@ export default function Dashboard() {
     nextStatus: Record<string, SyncState>,
     nextDetails: Record<string, string>,
     nextJobId: string | null,
+    nextMode: SyncMode,
   ) => {
     if (typeof window === 'undefined') {
       return;
     }
 
-    window.localStorage.setItem(DASHBOARD_SYNC_STORAGE_KEY, JSON.stringify({
-      syncing: nextSyncing,
-      syncJobId: nextJobId,
-      syncStatus: nextStatus,
-      syncDetails: nextDetails,
-      updatedAt: Date.now(),
-    }));
+      window.localStorage.setItem(DASHBOARD_SYNC_STORAGE_KEY, JSON.stringify({
+        syncing: nextSyncing,
+        syncJobId: nextJobId,
+        syncMode: nextMode,
+        syncStatus: nextStatus,
+        syncDetails: nextDetails,
+        updatedAt: Date.now(),
+      }));
   }, []);
 
   const applySyncJob = useCallback((job: SyncJobStatus) => {
@@ -131,12 +135,14 @@ export default function Dashboard() {
 
     const nextSyncing = job.status === 'queued' || job.status === 'running';
     const nextJobId = nextSyncing ? job.job_id : null;
+    const nextMode = job.mode === 'deep_images' ? 'deep_images' : 'default';
 
     setSyncStatus(nextStatus);
     setSyncDetails(nextDetails);
     setSyncing(nextSyncing);
     setSyncJobId(nextJobId);
-    persistSyncState(nextSyncing, nextStatus, nextDetails, nextJobId);
+    setSyncMode(nextMode);
+    persistSyncState(nextSyncing, nextStatus, nextDetails, nextJobId, nextMode);
   }, [persistSyncState]);
 
   const checkHealth = useCallback(async () => {
@@ -177,6 +183,7 @@ export default function Dashboard() {
             syncJobId?: string | null;
             syncStatus?: Record<string, SyncState>;
             syncDetails?: Record<string, string>;
+            syncMode?: SyncMode;
             updatedAt?: number;
           };
 
@@ -191,6 +198,7 @@ export default function Dashboard() {
           if (parsed.syncing && parsed.syncJobId && parsed.updatedAt && Date.now() - parsed.updatedAt < 15 * 60 * 1000) {
             setSyncing(true);
             setSyncJobId(parsed.syncJobId);
+            setSyncMode(parsed.syncMode === 'deep_images' ? 'deep_images' : 'default');
           }
         } catch {
         }
@@ -237,7 +245,7 @@ export default function Dashboard() {
         setSyncDetails(nextDetails);
         setSyncing(false);
         setSyncJobId(null);
-        persistSyncState(false, nextStatus, nextDetails, null);
+        persistSyncState(false, nextStatus, nextDetails, null, syncMode);
       }
     };
 
@@ -250,7 +258,7 @@ export default function Dashboard() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [applySyncJob, checkHealth, loadStats, syncDetails, syncJobId, syncStatus, syncing, persistSyncState]);
+  }, [applySyncJob, checkHealth, loadStats, syncDetails, syncJobId, syncMode, syncStatus, syncing, persistSyncState]);
 
   const checkForDesktopUpdate = async () => {
     setCheckingUpdate(true);
@@ -302,20 +310,21 @@ export default function Dashboard() {
     }
   };
 
-  const syncAll = async () => {
+  const startSync = async (mode: SyncMode) => {
     const currentStatus = { openrouter: 'idle', civitai: 'idle', novita: 'idle' } as Record<string, SyncState>;
     const currentDetails = {} as Record<string, string>;
 
     try {
       setSyncing(true);
       setSyncJobId(null);
+      setSyncMode(mode);
       setSyncStatus(currentStatus);
       setSyncDetails(currentDetails);
-      persistSyncState(true, currentStatus, currentDetails, null);
+      persistSyncState(true, currentStatus, currentDetails, null, mode);
 
-      const job = await modelsApi.startSyncJob();
+      const job = await modelsApi.startSyncJob(mode);
       setSyncJobId(job.job_id);
-      persistSyncState(true, currentStatus, currentDetails, job.job_id);
+      persistSyncState(true, currentStatus, currentDetails, job.job_id, mode);
 
       const initialJobStatus = await modelsApi.getSyncJob(job.job_id);
       applySyncJob(initialJobStatus);
@@ -328,12 +337,21 @@ export default function Dashboard() {
       setSyncJobId(null);
 
       const errorMessage = err instanceof Error ? err.message : 'Sync failed';
-      const failedStatus = { ...currentStatus, openrouter: 'error' } as Record<string, SyncState>;
-      const failedDetails = { openrouter: errorMessage };
+      const failedSource = mode === 'deep_images' ? 'civitai' : 'openrouter';
+      const failedStatus = { ...currentStatus, [failedSource]: 'error' } as Record<string, SyncState>;
+      const failedDetails = { [failedSource]: errorMessage };
       setSyncStatus(failedStatus);
       setSyncDetails(failedDetails);
-      persistSyncState(false, failedStatus, failedDetails, null);
+      persistSyncState(false, failedStatus, failedDetails, null, mode);
     }
+  };
+
+  const syncAll = async () => {
+    await startSync('default');
+  };
+
+  const deepSyncImages = async () => {
+    await startSync('deep_images');
   };
 
   return (
@@ -357,16 +375,29 @@ export default function Dashboard() {
           </p>
         </motion.div>
 
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={syncAll}
-          disabled={syncing}
-          className="px-5 py-3 rounded-xl bg-white text-black font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-        >
-          {syncing ? <Sparkles className="animate-spin w-4 h-4" /> : <Database className="w-4 h-4" />}
-          {syncing ? 'Syncing...' : 'Sync Database'}
-        </motion.button>
+        <div className="flex flex-wrap items-center gap-3">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={deepSyncImages}
+            disabled={syncing}
+            className="px-4 py-3 rounded-xl bg-white/5 text-white font-medium flex items-center gap-2 border border-white/10 hover:bg-white/10 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {syncing && syncMode === 'deep_images' ? <Sparkles className="animate-spin w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+            {syncing && syncMode === 'deep_images' ? 'Deep Syncing...' : 'Deep Image Sync'}
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={syncAll}
+            disabled={syncing}
+            className="px-5 py-3 rounded-xl bg-white text-black font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {syncing && syncMode === 'default' ? <Sparkles className="animate-spin w-4 h-4" /> : <Database className="w-4 h-4" />}
+            {syncing && syncMode === 'default' ? 'Syncing...' : 'Sync Database'}
+          </motion.button>
+        </div>
       </div>
 
       <motion.div
@@ -378,7 +409,11 @@ export default function Dashboard() {
         <div className="flex items-center justify-between gap-4 mb-4">
           <div>
             <p className="text-sm font-semibold text-white">Sync Progress</p>
-            <p className="text-xs text-slate-500">Each source updates independently, so you can see which platform is still running.</p>
+            <p className="text-xs text-slate-500">
+              {syncMode === 'deep_images'
+                ? 'Deep image sync scans extra Civitai Red and Novita pages for fresher image coverage.'
+                : 'Each source updates independently, so you can see which platform is still running.'}
+            </p>
           </div>
           <span className="text-xs px-2 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300">
             {syncing ? 'Sync in progress' : 'Idle'}

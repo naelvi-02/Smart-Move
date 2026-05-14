@@ -209,6 +209,7 @@ class SyncJobStartResponse(BaseModel):
     """Response returned when a sync job is queued."""
     job_id: str
     status: str
+    mode: str = "default"
     message: str
 
 
@@ -216,6 +217,7 @@ class SyncJobStatusResponse(BaseModel):
     """Current state of a background sync job."""
     job_id: str
     status: str
+    mode: str = "default"
     current_source: Optional[str] = None
     sources: dict[str, SyncJobSourceStatus]
     last_error: Optional[str] = None
