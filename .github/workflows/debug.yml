@@ -1,0 +1,29 @@
+name: Debug VPS
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/debug.yml'
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Diagnostics
+        run: |
+          DEPLOY_PORT="${{ secrets.VPS_PORT }}"
+          if [ -z "$DEPLOY_PORT" ]; then DEPLOY_PORT=22; fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          touch ~/.ssh/known_hosts
+          
+          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
+          echo "=== Nginx Config ==="
+          cat /etc/nginx/sites-enabled/smart-move-web
+          echo "=== Directory /var/www/smart-move-web ==="
+          ls -la /var/www/smart-move-web
+          echo "=== Directory /var/www/smart-move-web/admin ==="
+          ls -la /var/www/smart-move-web/admin || echo "Not found"
+          EOF
