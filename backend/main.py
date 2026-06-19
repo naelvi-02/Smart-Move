@@ -13,7 +13,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import init_db
-from routers import models, benchmarks, cost
+from routers import models, benchmarks, cost, admin
 
 
 @asynccontextmanager
@@ -56,7 +56,7 @@ app.add_middleware(
 app.include_router(models.router)
 app.include_router(benchmarks.router)
 app.include_router(cost.router)
-
+app.include_router(admin.router)
 
 @app.get("/")
 async def root():
@@ -72,7 +72,6 @@ async def root():
             "cost": "/api/cost"
         }
     }
-
 
 @app.get("/health")
 async def health_check():
