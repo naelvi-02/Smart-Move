@@ -412,7 +412,7 @@ function SystemLogsCard({
   isPaused,
 }: {
   logs: LogEntry[];
-  logsEndRef: React.RefObject<HTMLDivElement>;
+  logsEndRef: React.RefObject<HTMLDivElement | null>;
   cloudflareDebug: boolean;
   setCloudflareDebug: (v: boolean) => void;
   isPaused: boolean;
