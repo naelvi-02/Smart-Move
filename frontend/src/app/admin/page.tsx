@@ -62,7 +62,9 @@ export default function App() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.naelvi.com";
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (logs.length > 0) {
+      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [logs]);
 
   useEffect(() => {

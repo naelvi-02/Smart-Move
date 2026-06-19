@@ -30,6 +30,7 @@ jobs:
       - name: Build Next.js
         run: |
           cd frontend
+          export NEXT_PUBLIC_IS_WEB_APP=true
           npm run build
 
       - name: Setup SSH key
