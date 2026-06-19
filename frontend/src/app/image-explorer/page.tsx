@@ -11,7 +11,9 @@ import {
     Search,
     Palette,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Copy,
+    Check
 } from 'lucide-react';
 import { modelsApi, Model, ImageModelDetails } from '@/lib/api';
 import { cn, formatNumber } from '@/lib/utils';
@@ -33,6 +35,7 @@ export default function ImageExplorer() {
     const [expandedModel, setExpandedModel] = useState<string | null>(null);
     const [detailCache, setDetailCache] = useState<Record<string, ImageModelDetails>>({});
     const [detailLoadingKey, setDetailLoadingKey] = useState<string | null>(null);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
     const itemsPerPage = 50;
 
     const getDetailKey = useCallback((model: Model) => `${model.source}:${model.model_id}`, []);
@@ -427,8 +430,23 @@ export default function ImageExplorer() {
                                                             </div>
                                                             <div className="flex-1 space-y-4">
                                                                 <div>
-                                                                    <h4 className="text-lg font-bold text-white">{modelName}</h4>
-                                                                    <p className="text-sm text-slate-400 mt-1">Source: {model.source} • Base: {modelBase || 'Unknown'}</p>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <h4 className="text-lg font-bold text-white">{modelName}</h4>
+                                                                        <button 
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                navigator.clipboard.writeText(model.model_id);
+                                                                                setCopiedId(model.model_id);
+                                                                                setTimeout(() => setCopiedId(null), 2000);
+                                                                            }}
+                                                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-xs text-blue-300 transition-colors"
+                                                                            title="Copy exact Model ID to use in scripts/API"
+                                                                        >
+                                                                            {copiedId === model.model_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                                                                            <span className="font-mono">{model.model_id}</span>
+                                                                        </button>
+                                                                    </div>
+                                                                    <p className="text-sm text-slate-400 mt-2">Source: {model.source} • Base: {modelBase || 'Unknown'}</p>
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2">
                                                                     {modelTags.slice(0, 8).map((tag) => (
