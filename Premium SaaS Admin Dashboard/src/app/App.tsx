@@ -1,4 +1,3 @@
-"use client";
 import { useState, useEffect, useRef } from "react";
 import { Pause, X, RefreshCw, ChevronRight, Circle } from "lucide-react";
 
@@ -51,73 +50,28 @@ function getCurrentTime() {
 }
 
 export default function App() {
-  const [isRunning, setIsRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [cloudflareDebug, setCloudflareDebug] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [progress, setProgress] = useState(0);
-  const [processed, setProcessed] = useState(0);
-  const [total, setTotal] = useState(100000);
-  const [eta, setEta] = useState("~");
-  const [speed, setSpeed] = useState(0);
+  const [logs, setLogs] = useState<LogEntry[]>(SEED_LOGS);
+  const [streamIdx, setStreamIdx] = useState(0);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.naelvi.com";
-
   useEffect(() => {
-    if (logs.length > 0) {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
   useEffect(() => {
-    const timer = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/admin/sync/status`);
-        if (res.ok) {
-          const data = await res.json();
-          setIsRunning(data.is_running);
-          if (data.logs) setLogs(data.logs);
-          if (data.progress !== undefined) setProgress(data.progress);
-          if (data.processed !== undefined) setProcessed(data.processed);
-          if (data.total !== undefined) setTotal(data.total);
-          if (data.eta !== undefined) setEta(data.eta);
-          if (data.speed !== undefined) setSpeed(data.speed);
-        }
-      } catch (e) {
-        console.error("Status fetch error", e);
-      }
-    }, 2000);
+    if (isPaused) return;
+    const timer = setInterval(() => {
+      const msg = STREAM_MESSAGES[streamIdx % STREAM_MESSAGES.length];
+      setLogs(prev => [
+        ...prev.slice(-80),
+        { id: Date.now(), time: getCurrentTime(), level: msg.level, message: msg.message },
+      ]);
+      setStreamIdx(i => i + 1);
+    }, 2800);
     return () => clearInterval(timer);
-  }, []);
-
-  const handleToggleSync = async () => {
-    if (!isRunning) {
-      try {
-        await fetch(`${API_URL}/api/admin/sync/start`, { method: "POST" });
-        setIsRunning(true);
-      } catch (e) {
-        console.error("Start sync error", e);
-      }
-    } else {
-      try {
-        await fetch(`${API_URL}/api/admin/sync/pause`, { method: "POST" });
-        setIsRunning(false);
-      } catch (e) {
-        console.error("Pause sync error", e);
-      }
-    }
-  };
-
-  const handleResetSync = async () => {
-    if (confirm("Are you sure you want to reset the sync progress? This will delete the checkpoint and start from 0.")) {
-      try {
-        await fetch(`${API_URL}/api/admin/sync/reset`, { method: "POST" });
-        setIsRunning(false);
-      } catch (e) {
-        console.error("Reset sync error", e);
-      }
-    }
-  };
+  }, [isPaused, streamIdx]);
 
   return (
     <>
@@ -186,16 +140,7 @@ export default function App() {
           </div>
 
           {/* ── Section 1: Mass Sync ─────────────────────────────────────── */}
-          <MassSyncCard
-            isRunning={isRunning}
-            handleToggleSync={handleToggleSync}
-            handleResetSync={handleResetSync}
-            progress={progress}
-            processed={processed}
-            total={total}
-            eta={eta}
-            speed={speed}
-          />
+          <MassSyncCard isPaused={isPaused} setIsPaused={setIsPaused} />
 
           {/* ── Section 2: System Logs ───────────────────────────────────── */}
           <SystemLogsCard
@@ -203,7 +148,7 @@ export default function App() {
             logsEndRef={logsEndRef}
             cloudflareDebug={cloudflareDebug}
             setCloudflareDebug={setCloudflareDebug}
-            isRunning={isRunning}
+            isPaused={isPaused}
           />
 
         </div>
@@ -216,27 +161,15 @@ export default function App() {
    Mass Sync Card
    ════════════════════════════════════════════════════════════════════ */
 function MassSyncCard({
-  isRunning,
-  handleToggleSync,
-  handleResetSync,
-  progress,
-  processed,
-  total,
-  eta,
-  speed
+  isPaused,
+  setIsPaused,
 }: {
-  isRunning: boolean;
-  handleToggleSync: () => void;
-  handleResetSync: () => void;
-  progress: number;
-  processed: number;
-  total: number;
-  eta: string;
-  speed: number;
+  isPaused: boolean;
+  setIsPaused: (v: boolean) => void;
 }) {
-  const PROGRESS = progress;
-  const PROCESSED = processed.toLocaleString();
-  const TOTAL = total.toLocaleString();
+  const PROGRESS = 65;
+  const PROCESSED = "65,432";
+  const TOTAL = "100,000";
 
   return (
     <div
@@ -258,7 +191,7 @@ function MassSyncCard({
               <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-white">
                 Mass Sync
               </h2>
-              <LiveBadge active={isRunning} />
+              <LiveBadge active={!isPaused} />
             </div>
             <p className="text-[13px] text-[#52525B]">
               Synchronizing model metadata across environments
@@ -270,7 +203,6 @@ function MassSyncCard({
             <button
               className="btn flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13px] font-medium text-[#A1A1AA] border border-white/[0.08] transition-all duration-150"
               style={{ background: "rgba(255,255,255,0.04)" }}
-              onClick={handleResetSync}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.07)";
                 (e.currentTarget as HTMLElement).style.color = "#FAFAFA";
@@ -281,19 +213,19 @@ function MassSyncCard({
               }}
             >
               <X size={13} />
-              Reset
+              Cancel
             </button>
             <button
               className="btn flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13px] font-medium text-white transition-all duration-150"
               style={{
-                background: !isRunning
+                background: isPaused
                   ? "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)"
                   : "linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)",
-                boxShadow: !isRunning
+                boxShadow: isPaused
                   ? "0 0 0 1px rgba(34,197,94,0.3), 0 2px 8px rgba(34,197,94,0.2)"
                   : "0 0 0 1px rgba(59,130,246,0.3), 0 2px 8px rgba(59,130,246,0.2)",
               }}
-              onClick={handleToggleSync}
+              onClick={() => setIsPaused(!isPaused)}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.filter = "brightness(1.08)";
               }}
@@ -301,8 +233,8 @@ function MassSyncCard({
                 (e.currentTarget as HTMLElement).style.filter = "brightness(1)";
               }}
             >
-              {!isRunning ? (
-                <><RefreshCw size={13} /> {processed === 0 ? "Start Sync" : "Resume Sync"}</>
+              {isPaused ? (
+                <><RefreshCw size={13} /> Resume Sync</>
               ) : (
                 <><Pause size={13} /> Pause Sync</>
               )}
@@ -342,7 +274,7 @@ function MassSyncCard({
             }}
           >
             {/* Shimmer */}
-            {isRunning && (
+            {!isPaused && (
               <div
                 className="shimmer-bar absolute inset-y-0 w-16 rounded-full"
                 style={{
@@ -371,12 +303,12 @@ function MassSyncCard({
         />
         <MetricCell
           label="ETA"
-          value={eta}
+          value="~8 min remaining"
           mono
         />
         <MetricCell
           label="Speed"
-          value={`${speed.toLocaleString()} rec/min`}
+          value="1,280 rec/min"
           mono
         />
       </div>
@@ -447,13 +379,13 @@ function SystemLogsCard({
   logsEndRef,
   cloudflareDebug,
   setCloudflareDebug,
-  isRunning,
+  isPaused,
 }: {
   logs: LogEntry[];
-  logsEndRef: React.RefObject<HTMLDivElement | null>;
+  logsEndRef: React.RefObject<HTMLDivElement>;
   cloudflareDebug: boolean;
   setCloudflareDebug: (v: boolean) => void;
-  isRunning: boolean;
+  isPaused: boolean;
 }) {
   return (
     <div
@@ -478,7 +410,7 @@ function SystemLogsCard({
             className="inline-flex items-center gap-1.5 text-[11px] text-[#52525B]"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            {isRunning ? (
+            {!isPaused ? (
               <>
                 <span className="live-dot inline-block w-1.5 h-1.5 rounded-full bg-blue-400" />
                 streaming

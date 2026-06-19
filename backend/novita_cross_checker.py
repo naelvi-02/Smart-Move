@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-import requests
+from curl_cffi import requests
 from dotenv import load_dotenv
 
 env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
@@ -40,7 +40,7 @@ def check_novita_availability():
                 continue
                 
             print(f"Checking '{m.name}'...", end="\r")
-            res = requests.get(url, headers=headers, params={"query": query_name, "pagination.limit": 20}, timeout=10)
+            res = requests.get(url, headers=headers, params={"query": query_name, "pagination.limit": 20}, timeout=10, impersonate="chrome120")
             if res.status_code == 200:
                 data = res.json()
                 models = data.get("models", [])

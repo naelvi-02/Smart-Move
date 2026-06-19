@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-import requests
+from curl_cffi import requests
 from dotenv import load_dotenv
 
 env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from database import SessionLocal, init_db
 from models import Model
 from adapters.civitai import normalize_model
+
+import json
 
 def scrape_civitai_top_100k():
     init_db()
@@ -24,18 +26,34 @@ def scrape_civitai_top_100k():
         "limit": 100
     }
     
+    state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scraper_state.json")
+    
     total_processed = 0
     total_inserted = 0
     total_updated = 0
     target_models = 100000
     page = 1
     
-    print(f"Starting mass Civitai scraper... Target: {target_models} models")
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, "r") as f:
+                state = json.load(f)
+                total_processed = state.get("total_processed", 0)
+                total_inserted = state.get("total_inserted", 0)
+                total_updated = state.get("total_updated", 0)
+                page = state.get("page", 1)
+                cursor = state.get("cursor")
+                if cursor:
+                    params["cursor"] = cursor
+        except Exception as e:
+            print(f"Failed to load state: {e}")
+            
+    print(f"Starting mass Civitai scraper... Target: {target_models} models. Resuming from page {page} (Processed: {total_processed})")
     
     while total_processed < target_models:
         try:
-            print(f"Fetching page {page} (Processed: {total_processed})...", end="\r")
-            response = requests.get(url, params=params, timeout=30)
+            print(f"Fetching page {page} (Processed: {total_processed})...")
+            response = requests.get(url, params=params, timeout=30, impersonate="chrome120")
             
             if response.status_code == 429:
                 print(f"\nRate limited! Sleeping for 5 seconds...")
@@ -97,6 +115,20 @@ def scrape_civitai_top_100k():
             db.commit()
             
             cursor = data.get("metadata", {}).get("nextCursor")
+            
+            # Save state
+            try:
+                with open(state_file, "w") as f:
+                    json.dump({
+                        "total_processed": total_processed,
+                        "total_inserted": total_inserted,
+                        "total_updated": total_updated,
+                        "page": page + 1,
+                        "cursor": cursor
+                    }, f)
+            except Exception as e:
+                print(f"Error saving state: {e}")
+
             if not cursor:
                 print("\nNo next cursor found. End of catalog.")
                 break
