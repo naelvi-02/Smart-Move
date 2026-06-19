@@ -181,7 +181,8 @@ novita_job = {
     "processed": 0,
     "total": 100000, # This gets updated to actual unverified count
     "speed": 0,
-    "eta": "~"
+    "eta": "~",
+    "found": 0
 }
 
 novita_process = None
@@ -195,18 +196,19 @@ def load_novita_initial_processed():
         try:
             with open(state_file, "r") as f:
                 state = json.load(f)
-                return state.get("total_processed", 0)
+                return state.get("total_processed", 0), state.get("total_found", 0)
         except Exception:
-            return 0
-    return 0
+            return 0, 0
+    return 0, 0
 
 def run_novita_scraper():
     global novita_process
     novita_job["is_running"] = True
     novita_job["logs"] = []
     
-    initial_processed = load_novita_initial_processed()
+    initial_processed, initial_found = load_novita_initial_processed()
     novita_job["processed"] = initial_processed
+    novita_job["found"] = initial_found
     
     start_time = time.time()
     start_processed = initial_processed
@@ -246,8 +248,11 @@ def run_novita_scraper():
                     p_str = line.split("Processed:")[1].split("|")[0].strip()
                     novita_job["processed"] = int(p_str)
                     
+                    f_str = line.split("Found in Novita:")[1].strip()
+                    novita_job["found"] = int(f_str)
+                    
                     if novita_job["total"] > 0:
-                        novita_job["progress"] = min(100, int((novita_job["processed"] / novita_job["total"]) * 100))
+                        novita_job["progress"] = round((novita_job["processed"] / novita_job["total"]) * 100, 2)
                     
                     elapsed_minutes = (time.time() - start_time) / 60.0
                     if elapsed_minutes > 0.1:
@@ -327,13 +332,16 @@ async def reset_novita_sync():
     novita_job["progress"] = 0
     novita_job["speed"] = 0
     novita_job["eta"] = "~"
+    novita_job["found"] = 0
     novita_job["logs"] = []
     return {"status": "reset"}
 
 @router.get("/novita/status")
 async def get_novita_status():
     if not novita_job["is_running"] and novita_job["processed"] == 0:
-        novita_job["processed"] = load_novita_initial_processed()
+        processed, found = load_novita_initial_processed()
+        novita_job["processed"] = processed
+        novita_job["found"] = found
         if novita_job["total"] > 0:
-            novita_job["progress"] = min(100, int((novita_job["processed"] / novita_job["total"]) * 100))
+            novita_job["progress"] = round((novita_job["processed"] / novita_job["total"]) * 100, 2)
     return novita_job

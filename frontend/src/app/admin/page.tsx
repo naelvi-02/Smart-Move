@@ -67,6 +67,7 @@ export default function App() {
   const [novitaTotal, setNovitaTotal] = useState(100000);
   const [novitaEta, setNovitaEta] = useState("~");
   const [novitaSpeed, setNovitaSpeed] = useState(0);
+  const [novitaFound, setNovitaFound] = useState(0);
 
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +110,7 @@ export default function App() {
           if (data.total !== undefined) setNovitaTotal(data.total);
           if (data.eta !== undefined) setNovitaEta(data.eta);
           if (data.speed !== undefined) setNovitaSpeed(data.speed);
+          if (data.found !== undefined) setNovitaFound(data.found);
         }
 
         // Merge and sort logs
@@ -267,6 +269,7 @@ export default function App() {
             total={novitaTotal}
             eta={novitaEta}
             speed={novitaSpeed}
+            found={novitaFound}
           />
 
           {/* ── Section 2: System Logs ───────────────────────────────────── */}
@@ -522,7 +525,8 @@ function NovitaSyncCard({
   processed,
   total,
   eta,
-  speed
+  speed,
+  found
 }: {
   isRunning: boolean;
   handleToggleSync: () => void;
@@ -532,10 +536,12 @@ function NovitaSyncCard({
   total: number;
   eta: string;
   speed: number;
+  found: number;
 }) {
   const PROGRESS = progress;
   const PROCESSED = processed.toLocaleString();
   const TOTAL = total.toLocaleString();
+  const FOUND = found.toLocaleString();
 
   return (
     <div
@@ -662,10 +668,15 @@ function NovitaSyncCard({
       </div>
 
       {/* Metrics row */}
-      <div className="grid grid-cols-3 divide-x divide-white/[0.06] px-0">
+      <div className="grid grid-cols-4 divide-x divide-white/[0.06] px-0">
         <MetricCell
           label="Checked"
           value={`${PROCESSED} / ${TOTAL}`}
+          mono
+        />
+        <MetricCell
+          label="Found in Novita"
+          value={FOUND}
           mono
         />
         <MetricCell
