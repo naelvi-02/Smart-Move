@@ -59,7 +59,7 @@ export default function App() {
   const [total, setTotal] = useState(100000);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.naelvi.com";
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -96,9 +96,6 @@ export default function App() {
         alert("Pause is not implemented in the backend yet. You can cancel the process manually.");
     }
   };
-
-  return () => clearInterval(timer);
-  }, [isPaused, streamIdx]);
 
   return (
     <>
