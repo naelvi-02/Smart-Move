@@ -21,7 +21,7 @@ def scrape_civitai_top_100k():
     db = SessionLocal()
     settings = get_settings()
     
-    url = "https://civitai.com/api/v1/models"
+    url = f"{settings.civitai_nsfw_base_url.rstrip('/')}/models"
     params = {
         "types": "Checkpoint",
         "sort": "Highest Rated",
