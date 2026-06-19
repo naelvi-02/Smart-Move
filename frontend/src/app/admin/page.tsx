@@ -59,13 +59,13 @@ export default function App() {
   const [total, setTotal] = useState(100000);
   const [eta, setEta] = useState("~");
   const [speed, setSpeed] = useState(0);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.naelvi.com";
 
   useEffect(() => {
-    if (logs.length > 0) {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (logs.length > 0 && logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
   }, [logs]);
 
@@ -200,7 +200,7 @@ export default function App() {
           {/* ── Section 2: System Logs ───────────────────────────────────── */}
           <SystemLogsCard
             logs={logs}
-            logsEndRef={logsEndRef}
+            logsContainerRef={logsContainerRef}
             cloudflareDebug={cloudflareDebug}
             setCloudflareDebug={setCloudflareDebug}
             isRunning={isRunning}
@@ -444,13 +444,13 @@ function LiveBadge({ active }: { active: boolean }) {
    ════════════════════════════════════════════════════════════════════ */
 function SystemLogsCard({
   logs,
-  logsEndRef,
+  logsContainerRef,
   cloudflareDebug,
   setCloudflareDebug,
   isRunning,
 }: {
   logs: LogEntry[];
-  logsEndRef: React.RefObject<HTMLDivElement | null>;
+  logsContainerRef: React.RefObject<HTMLDivElement | null>;
   cloudflareDebug: boolean;
   setCloudflareDebug: (v: boolean) => void;
   isRunning: boolean;
@@ -524,6 +524,7 @@ function SystemLogsCard({
       {/* Log pane */}
       <div
         className="logs-pane overflow-y-auto"
+        ref={logsContainerRef}
         style={{
           height: 360,
           background: "rgba(9,9,11,0.6)",
@@ -547,7 +548,6 @@ function SystemLogsCard({
           {logs.map((entry, i) => (
             <LogRow key={entry.id} entry={entry} isLast={i === logs.length - 1} />
           ))}
-          <div ref={logsEndRef} />
         </div>
       </div>
 
