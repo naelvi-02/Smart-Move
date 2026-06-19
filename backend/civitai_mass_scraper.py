@@ -12,19 +12,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from database import SessionLocal, init_db
 from models import Model
 from adapters.civitai import normalize_model
+from config import get_settings
 
 import json
 
 def scrape_civitai_top_100k():
     init_db()
     db = SessionLocal()
+    settings = get_settings()
     
     url = "https://civitai.com/api/v1/models"
     params = {
         "types": "Checkpoint",
         "sort": "Highest Rated",
-        "limit": 100
+        "limit": 100,
+        "nsfw": "true"
     }
+    
+    headers = {}
+    if settings.civitai_api_key:
+        headers["Authorization"] = f"Bearer {settings.civitai_api_key.strip()}"
     
     state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scraper_state.json")
     
@@ -53,7 +60,7 @@ def scrape_civitai_top_100k():
     while total_processed < target_models:
         try:
             print(f"Fetching page {page} (Processed: {total_processed})...")
-            response = requests.get(url, params=params, timeout=30, impersonate="chrome120")
+            response = requests.get(url, headers=headers, params=params, timeout=30, impersonate="chrome120")
             
             if response.status_code == 429:
                 print(f"\nRate limited! Sleeping for 5 seconds...")
