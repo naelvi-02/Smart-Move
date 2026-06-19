@@ -187,19 +187,18 @@ novita_job = {
 
 novita_process = None
 
-def get_novita_state_file_path():
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "novita_state.json")
-
 def load_novita_initial_processed():
-    state_file = get_novita_state_file_path()
-    if os.path.exists(state_file):
-        try:
-            with open(state_file, "r") as f:
-                state = json.load(f)
-                return state.get("total_processed", 0), state.get("total_found", 0)
-        except Exception:
-            return 0, 0
-    return 0, 0
+    from database import SessionLocal
+    from models import Model
+    db = SessionLocal()
+    try:
+        processed = db.query(Model).filter(Model.source == "civitai", Model.novita_checked == True).count()
+        found = db.query(Model).filter(Model.source == "civitai", Model.available_in_novita == True).count()
+        return processed, found
+    except Exception:
+        return 0, 0
+    finally:
+        db.close()
 
 def run_novita_scraper():
     global novita_process
@@ -316,18 +315,30 @@ async def pause_novita_sync():
 @router.post("/novita/reset")
 async def reset_novita_sync():
     global novita_process
-    if novita_process and novita_job["is_running"]:
+    
+    if novita_process and novita_process.poll() is None:
         novita_process.terminate()
-        novita_process = None
-        novita_job["is_running"] = False
-        
-    state_file = get_novita_state_file_path()
-    if os.path.exists(state_file):
         try:
-            os.remove(state_file)
-        except Exception:
-            pass
+            novita_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            novita_process.kill()
             
+    # Reset DB states
+    from database import SessionLocal
+    from models import Model
+    db = SessionLocal()
+    try:
+        db.query(Model).filter(Model.source == "civitai").update({
+            "novita_checked": False,
+            "available_in_novita": False
+        })
+        db.commit()
+    except Exception as e:
+        db.rollback()
+    finally:
+        db.close()
+        
+    novita_job["is_running"] = False
     novita_job["processed"] = 0
     novita_job["progress"] = 0
     novita_job["speed"] = 0

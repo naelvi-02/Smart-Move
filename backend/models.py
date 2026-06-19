@@ -33,6 +33,7 @@ class Model(Base):
     nsfw_flag = Column(Boolean, nullable=True)
     style_bucket = Column(String, nullable=True)  # realistic_human | anime_2d | anime_3d
     available_in_novita = Column(Boolean, default=False)  # True if model is available on Novita cloud GPU
+    novita_checked = Column(Boolean, default=False)  # True if the model has been checked in Novita API
     preview_image_url = Column(String, nullable=True)  # User gallery preview image from Civitai
     
     # Common metadata

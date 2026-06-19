@@ -21,22 +21,9 @@ def check_novita_availability():
     
     url = "https://api.novita.ai/v3/model"
     headers = {"Authorization": f"Bearer {api_key}"}
-    
-    state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "novita_state.json")
-    
-    total_processed = 0
-    total_found = 0
-    last_checked_id = 0
-    
-    if os.path.exists(state_file):
-        try:
-            with open(state_file, "r") as f:
-                state = json.load(f)
-                total_processed = state.get("total_processed", 0)
-                total_found = state.get("total_found", 0)
-                last_checked_id = state.get("last_checked_id", 0)
-        except Exception as e:
-            print(f"[NOVITA] Failed to load state: {e}")
+    # We don't need state file anymore, we use the DB directly
+    total_processed = db.query(Model).filter(Model.source == "civitai", Model.novita_checked == True).count()
+    total_found = db.query(Model).filter(Model.source == "civitai", Model.available_in_novita == True).count()
             
     # Target models is total Civitai models
     target_models = db.query(Model).filter(Model.source == "civitai").count()
@@ -48,16 +35,14 @@ def check_novita_availability():
     while True:
         batch = db.query(Model).filter(
             Model.source == "civitai",
-            Model.available_in_novita == False,
-            Model.id > last_checked_id
-        ).order_by(Model.id.asc()).limit(batch_size).all()
+            Model.novita_checked == False
+        ).limit(batch_size).all()
         
         if not batch:
             print("[NOVITA] No more unverified models found. Finished checking.")
             break
             
         for m in batch:
-            last_checked_id = m.id
             
             try:
                 query_name = m.name.split()[0] if m.name else ""
@@ -88,7 +73,12 @@ def check_novita_availability():
                     if is_available:
                         m.available_in_novita = True
                         total_found += 1
+                    else:
+                        m.available_in_novita = False
                         
+                m.novita_checked = True
+                db.commit()
+                
                 total_processed += 1
                 if total_processed % 10 == 0:
                     print(f"[NOVITA] Processed: {total_processed} | Found in Novita: {total_found}")
@@ -96,21 +86,9 @@ def check_novita_availability():
                 time.sleep(0.5) # respect Novita rate limit
             except Exception as e:
                 print(f"[NOVITA] Error checking ID {m.id}: {e}")
+                db.rollback()
                 time.sleep(5)
                 
-        db.commit()
-        
-        # Save state after each batch
-        try:
-            with open(state_file, "w") as f:
-                json.dump({
-                    "total_processed": total_processed,
-                    "total_found": total_found,
-                    "last_checked_id": last_checked_id
-                }, f)
-        except Exception as e:
-            print(f"[NOVITA] Error saving state: {e}")
-            
     db.close()
     print(f"\n[NOVITA] Novita Validation Sync Complete!")
     print(f"[NOVITA] Total Processed: {total_processed}")
