@@ -454,7 +454,11 @@ async def list_image_models(
     List image models only with total count.
     Supports sorting: popular, downloads, likes, newest.
     """
-    query = db.query(Model).filter(Model.type == "image")
+    query = db.query(Model).filter(
+        Model.type == "image",
+        Model.nsfw_flag == True,
+        Model.available_in_novita == True
+    )
     
     if source:
         query = query.filter(Model.source == source)
@@ -470,10 +474,6 @@ async def list_image_models(
                 Model.base_model.ilike(search_term),
             )
         )
-    if available_in_novita is not None:
-        query = query.filter(Model.available_in_novita == available_in_novita)
-    if nsfw_only is not None:
-        query = query.filter(Model.nsfw_flag == nsfw_only)
     
     # Get total count before pagination
     total = query.count()
