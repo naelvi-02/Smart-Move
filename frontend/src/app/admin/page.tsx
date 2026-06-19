@@ -59,6 +59,15 @@ export default function App() {
   const [total, setTotal] = useState(100000);
   const [eta, setEta] = useState("~");
   const [speed, setSpeed] = useState(0);
+
+  // Novita State
+  const [isNovitaRunning, setIsNovitaRunning] = useState(false);
+  const [novitaProgress, setNovitaProgress] = useState(0);
+  const [novitaProcessed, setNovitaProcessed] = useState(0);
+  const [novitaTotal, setNovitaTotal] = useState(100000);
+  const [novitaEta, setNovitaEta] = useState("~");
+  const [novitaSpeed, setNovitaSpeed] = useState(0);
+
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.naelvi.com";
@@ -72,23 +81,46 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`${API_URL}/api/admin/sync/status`);
-        if (res.ok) {
-          const data = await res.json();
+        const [resCivitai, resNovita] = await Promise.all([
+          fetch(`${API_URL}/api/admin/sync/status`),
+          fetch(`${API_URL}/api/admin/sync/novita/status`)
+        ]);
+
+        let civitaiLogs: LogEntry[] = [];
+        let novitaLogs: LogEntry[] = [];
+
+        if (resCivitai.ok) {
+          const data = await resCivitai.json();
           setIsRunning(data.is_running);
-          if (data.logs) setLogs(data.logs);
+          if (data.logs) civitaiLogs = data.logs;
           if (data.progress !== undefined) setProgress(data.progress);
           if (data.processed !== undefined) setProcessed(data.processed);
           if (data.total !== undefined) setTotal(data.total);
           if (data.eta !== undefined) setEta(data.eta);
           if (data.speed !== undefined) setSpeed(data.speed);
         }
+
+        if (resNovita.ok) {
+          const data = await resNovita.json();
+          setIsNovitaRunning(data.is_running);
+          if (data.logs) novitaLogs = data.logs;
+          if (data.progress !== undefined) setNovitaProgress(data.progress);
+          if (data.processed !== undefined) setNovitaProcessed(data.processed);
+          if (data.total !== undefined) setNovitaTotal(data.total);
+          if (data.eta !== undefined) setNovitaEta(data.eta);
+          if (data.speed !== undefined) setNovitaSpeed(data.speed);
+        }
+
+        // Merge and sort logs
+        const combined = [...civitaiLogs, ...novitaLogs].sort((a, b) => a.id - b.id).slice(-100);
+        setLogs(combined);
+
       } catch (e) {
         console.error("Status fetch error", e);
       }
     }, 2000);
     return () => clearInterval(timer);
-  }, []);
+  }, [API_URL]);
 
   const handleToggleSync = async () => {
     if (!isRunning) {
@@ -109,12 +141,41 @@ export default function App() {
   };
 
   const handleResetSync = async () => {
-    if (confirm("Are you sure you want to reset the sync progress? This will delete the checkpoint and start from 0.")) {
+    if (confirm("Are you sure you want to reset the Civitai sync progress? This will delete the checkpoint and start from 0.")) {
       try {
         await fetch(`${API_URL}/api/admin/sync/reset`, { method: "POST" });
         setIsRunning(false);
       } catch (e) {
         console.error("Reset sync error", e);
+      }
+    }
+  };
+
+  const handleToggleNovitaSync = async () => {
+    if (!isNovitaRunning) {
+      try {
+        await fetch(`${API_URL}/api/admin/sync/novita/start`, { method: "POST" });
+        setIsNovitaRunning(true);
+      } catch (e) {
+        console.error("Start Novita sync error", e);
+      }
+    } else {
+      try {
+        await fetch(`${API_URL}/api/admin/sync/novita/pause`, { method: "POST" });
+        setIsNovitaRunning(false);
+      } catch (e) {
+        console.error("Pause Novita sync error", e);
+      }
+    }
+  };
+
+  const handleResetNovitaSync = async () => {
+    if (confirm("Are you sure you want to reset the Novita validation progress? This will delete the checkpoint and start from 0.")) {
+      try {
+        await fetch(`${API_URL}/api/admin/sync/novita/reset`, { method: "POST" });
+        setIsNovitaRunning(false);
+      } catch (e) {
+        console.error("Reset Novita sync error", e);
       }
     }
   };
@@ -195,6 +256,17 @@ export default function App() {
             total={total}
             eta={eta}
             speed={speed}
+          />
+
+          <NovitaSyncCard
+            isRunning={isNovitaRunning}
+            handleToggleSync={handleToggleNovitaSync}
+            handleResetSync={handleResetNovitaSync}
+            progress={novitaProgress}
+            processed={novitaProcessed}
+            total={novitaTotal}
+            eta={novitaEta}
+            speed={novitaSpeed}
           />
 
           {/* ── Section 2: System Logs ───────────────────────────────────── */}
@@ -436,6 +508,178 @@ function LiveBadge({ active }: { active: boolean }) {
       />
       {active ? "Live Sync" : "Paused"}
     </span>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Novita Sync Card
+   ════════════════════════════════════════════════════════════════════ */
+function NovitaSyncCard({
+  isRunning,
+  handleToggleSync,
+  handleResetSync,
+  progress,
+  processed,
+  total,
+  eta,
+  speed
+}: {
+  isRunning: boolean;
+  handleToggleSync: () => void;
+  handleResetSync: () => void;
+  progress: number;
+  processed: number;
+  total: number;
+  eta: string;
+  speed: number;
+}) {
+  const PROGRESS = progress;
+  const PROCESSED = processed.toLocaleString();
+  const TOTAL = total.toLocaleString();
+
+  return (
+    <div
+      className="rounded-[20px] border border-white/[0.07] overflow-hidden"
+      style={{
+        background: "rgba(15,15,17,0.95)",
+        backdropFilter: "blur(12px)",
+        boxShadow: "0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 32px rgba(0,0,0,0.5)",
+      }}
+    >
+      {/* Card top bar */}
+      <div
+        className="px-8 pt-7 pb-6 border-b border-white/[0.06]"
+        style={{ background: "rgba(255,255,255,0.015)" }}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-white">
+                Novita Validation Check
+              </h2>
+              <LiveBadge active={isRunning} />
+            </div>
+            <p className="text-[13px] text-[#52525B]">
+              Cross-referencing Checkpoint availability with Novita API
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2.5">
+            <button
+              className="btn flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13px] font-medium text-[#A1A1AA] border border-white/[0.08] transition-all duration-150"
+              style={{ background: "rgba(255,255,255,0.04)" }}
+              onClick={handleResetSync}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.07)";
+                (e.currentTarget as HTMLElement).style.color = "#FAFAFA";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+                (e.currentTarget as HTMLElement).style.color = "#A1A1AA";
+              }}
+            >
+              <X size={13} />
+              Reset
+            </button>
+            <button
+              className="btn flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13px] font-medium text-white transition-all duration-150"
+              style={{
+                background: !isRunning
+                  ? "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)"
+                  : "linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)",
+                boxShadow: !isRunning
+                  ? "0 0 0 1px rgba(34,197,94,0.3), 0 2px 8px rgba(34,197,94,0.2)"
+                  : "0 0 0 1px rgba(59,130,246,0.3), 0 2px 8px rgba(59,130,246,0.2)",
+              }}
+              onClick={handleToggleSync}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.filter = "brightness(1.08)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.filter = "brightness(1)";
+              }}
+            >
+              {!isRunning ? (
+                <><RefreshCw size={13} /> {processed === 0 ? "Start Novita Check" : "Resume Check"}</>
+              ) : (
+                <><Pause size={13} /> Pause Check</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Progress area */}
+      <div className="px-8 pt-7 pb-6 border-b border-white/[0.06]">
+        {/* Progress header row */}
+        <div className="flex items-center justify-between mb-3.5">
+          <span className="text-[12px] font-medium text-[#52525B] tracking-[0.06em] uppercase"
+            style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+            Check Progress
+          </span>
+          <span
+            className="text-[13px] font-medium"
+            style={{ fontFamily: "'JetBrains Mono', monospace", color: "#3B82F6" }}
+          >
+            {PROGRESS}%
+          </span>
+        </div>
+
+        {/* Track */}
+        <div
+          className="relative h-2 w-full rounded-full overflow-hidden"
+          style={{ background: "rgba(255,255,255,0.06)" }}
+        >
+          {/* Fill */}
+          <div
+            className="absolute inset-y-0 left-0 rounded-full overflow-hidden transition-all duration-700"
+            style={{
+              width: `${PROGRESS}%`,
+              background: "linear-gradient(90deg, #10B981 0%, #059669 60%, #34D399 100%)",
+              boxShadow: "0 0 10px rgba(16,185,129,0.5), 0 0 20px rgba(16,185,129,0.15)",
+            }}
+          >
+            {/* Shimmer */}
+            {isRunning && (
+              <div
+                className="shimmer-bar absolute inset-y-0 w-16 rounded-full"
+                style={{
+                  background:
+                    "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.28) 50%, transparent 100%)",
+                }}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Tick labels */}
+        <div className="flex justify-between mt-2">
+          <span className="text-[11px] text-[#3F3F46]" style={{ fontFamily: "'JetBrains Mono', monospace" }}>0</span>
+          <span className="text-[11px] text-[#3F3F46]" style={{ fontFamily: "'JetBrains Mono', monospace" }}>50%</span>
+          <span className="text-[11px] text-[#3F3F46]" style={{ fontFamily: "'JetBrains Mono', monospace" }}>100%</span>
+        </div>
+      </div>
+
+      {/* Metrics row */}
+      <div className="grid grid-cols-3 divide-x divide-white/[0.06] px-0">
+        <MetricCell
+          label="Checked"
+          value={`${PROCESSED} / ${TOTAL}`}
+          mono
+        />
+        <MetricCell
+          label="ETA"
+          value={eta}
+          mono
+        />
+        <MetricCell
+          label="Speed"
+          value={`${speed.toLocaleString()} rec/min`}
+          mono
+        />
+      </div>
+    </div>
   );
 }
 
