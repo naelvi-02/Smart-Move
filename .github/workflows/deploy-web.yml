@@ -1,0 +1,66 @@
+name: Deploy Web Frontend VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'deploy/aws/**'
+      - '.github/workflows/deploy-web.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build Next.js
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Setup SSH key
+        run: |
+          DEPLOY_PORT="${{ secrets.VPS_PORT }}"
+          if [ -z "$DEPLOY_PORT" ]; then DEPLOY_PORT=22; fi
+          if [ -z "${{ secrets.VPS_HOST }}" ] || [ -z "${{ secrets.VPS_USER }}" ] || [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "Missing one of VPS_HOST / VPS_USER / VPS_SSH_KEY secrets"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          touch ~/.ssh/known_hosts
+
+      - name: Deploy static files to VPS
+        run: |
+          DEPLOY_PORT="${{ secrets.VPS_PORT }}"
+          if [ -z "$DEPLOY_PORT" ]; then DEPLOY_PORT=22; fi
+          
+          # Create directory and set permissions
+          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "sudo mkdir -p /var/www/smart-move-web && sudo chown -R ${USER}:${USER} /var/www/smart-move-web"
+          
+          # Copy files
+          scp -o StrictHostKeyChecking=accept-new -P "$DEPLOY_PORT" -r frontend/out/* "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/smart-move-web/"
+          
+          # Copy Nginx config and restart
+          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
+          set -euo pipefail
+          sudo cp /opt/smart-move/deploy/aws/nginx-smart-move-web.conf /etc/nginx/sites-available/smart-move-web
+          sudo ln -sf /etc/nginx/sites-available/smart-move-web /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl reload nginx
+          EOF
