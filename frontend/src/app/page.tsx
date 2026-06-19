@@ -62,8 +62,6 @@ type SyncMode = 'default' | 'deep_images';
 
 const SYNC_SOURCES = [
   { key: 'openrouter', label: 'OpenRouter', accent: 'text-indigo-400' },
-  { key: 'civitai', label: 'Civitai', accent: 'text-pink-400' },
-  { key: 'novita', label: 'Novita', accent: 'text-cyan-400' },
 ] as const;
 
 export default function Dashboard() {
@@ -376,16 +374,7 @@ export default function Dashboard() {
         </motion.div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={deepSyncImages}
-            disabled={syncing}
-            className="px-4 py-3 rounded-xl bg-white/5 text-white font-medium flex items-center gap-2 border border-white/10 hover:bg-white/10 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {syncing && syncMode === 'deep_images' ? <Sparkles className="animate-spin w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
-            {syncing && syncMode === 'deep_images' ? 'Deep Syncing...' : 'Deep Image Sync'}
-          </motion.button>
+
 
           <motion.button
             whileHover={{ scale: 1.02 }}
