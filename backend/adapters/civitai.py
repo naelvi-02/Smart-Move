@@ -142,7 +142,7 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     
     # Determine style bucket based on tags and type
     tags = raw.get("tags", [])
-    style_bucket = determine_style_bucket(tags, raw.get("type", ""))
+    style_bucket = determine_style_bucket(tags, raw.get("type", ""), raw.get("name", ""), base_model)
     
     stats = raw.get("stats", {})
     return {
@@ -164,104 +164,96 @@ def normalize_model(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def determine_style_bucket(tags: List[str], model_type: str, model_name: str = "") -> str:
+def determine_style_bucket(tags: List[str], model_type: str, model_name: str = "", base_model: str = "") -> str:
     """
     Determine the style bucket for a model based on its tags using scoring.
     Handles cases where models have mixed tags (e.g., both anime and realistic).
-    Also uses model name as a secondary signal.
-    
-    Args:
-        tags: List of model tags.
-        model_type: Type of model (Checkpoint, LORA, etc.).
-        model_name: Name of the model for additional classification hints.
-        
-    Returns:
-        Style bucket: 'realistic_human', 'anime_2d', 'anime_3d', or 'other'
+    Also uses model name and base model as secondary signals.
     """
     tags_lower = [t.lower() for t in tags]
     tags_set = set(tags_lower)
-    tags_str = " ".join(tags_lower)
     name_lower = model_name.lower() if model_name else ""
+    base_lower = base_model.lower() if base_model else ""
     
+    # Furry/anthro models -> classify as other
+    furry_tags = ["furry", "anthro", "feral", "yiff", "kemono"]
+    if any(kw in tags_set for kw in furry_tags):
+        return "other"
+        
+    # Strong base model overrides
+    if "illustrious" in base_lower or "pony" in base_lower or "animagine" in base_lower or "nai" in base_lower:
+        return "anime_2d"
+        
+    # Base model name hints
+    anime_name_hints = ["anime", "hentai", "waifu", "illustr", "mein", "nova hentai", "cetus", "anything", "hassaku", "watamote"]
+    realistic_name_hints = ["realistic", "realism", "photon", "cyberrealistic", "real", "dreamshaper", "juggernaut", "chillout", "majicmix", "epicrealism"]
+    
+    if any(kw in name_lower for kw in anime_name_hints):
+        return "anime_2d"
+    if any(kw in name_lower for kw in realistic_name_hints):
+        return "realistic_human"
+        
     # Scoring system
     anime_score = 0
     realistic_score = 0
     threed_score = 0
     
-    # Strong anime indicators (high weight)
-    strong_anime = ["anime", "manga", "hentai", "waifu", "2d", "2.5d", "illustration"]
-    for kw in strong_anime:
-        if kw in tags_str:
-            anime_score += 3
-    
-    # Weak anime indicators
+    strong_anime = ["anime", "manga", "hentai", "waifu", "2d", "2.5d", "illustration", "anime-style", "otaku"]
     weak_anime = ["cartoon", "art", "character"]
-    for kw in weak_anime:
-        if kw in tags_str:
+    
+    strong_realistic = ["photorealistic", "photography", "photo", "photorealism", "realistic", "realism", "raw-photo"]
+    weak_realistic = ["portrait", "human", "semi-realistic", "woman", "girl", "1girl"]
+    
+    threed_keywords = ["3d", "3dcg", "cgi", "blender", "render", "pixar", "octane"]
+    
+    for tag in tags_set:
+        # EXACT matches for tag scoring
+        if tag in strong_anime:
+            anime_score += 3
+        elif tag in weak_anime:
             anime_score += 1
-    
-    # Strong realistic indicators
-    strong_realistic = ["photorealistic", "photography", "photo", "photorealism"]
-    for kw in strong_realistic:
-        if kw in tags_str:
+            
+        if tag in strong_realistic:
             realistic_score += 3
-    
-    # Weak realistic indicators
-    weak_realistic = ["realistic", "realism", "portrait", "human", "semi-realistic"]
-    for kw in weak_realistic:
-        if kw in tags_str:
+        elif tag in weak_realistic:
             realistic_score += 1
-    
-    # 3D indicators
-    threed_keywords = ["3d", "3dcg", "cgi", "blender", "render", "pixar"]
-    for kw in threed_keywords:
-        if kw in tags_str:
+            
+        if tag in threed_keywords:
             threed_score += 2
-    
-    # Name-based hints (secondary signal)
-    anime_name_hints = ["anime", "hentai", "waifu", "illustr", "mein", "nova hentai"]
-    realistic_name_hints = ["realistic", "realism", "photon", "cyberrealistic", "real", "dreamshaper", "juggernaut", "chillout"]
-    
-    for kw in anime_name_hints:
-        if kw in name_lower:
-            anime_score += 2
-    for kw in realistic_name_hints:
-        if kw in name_lower:
-            realistic_score += 2
-    
-    # Furry/anthro models → separate from anime, classify as "other"
-    furry_tags = ["furry", "anthro", "feral", "yiff", "kemono"]
-    if any(kw in tags_str for kw in furry_tags):
-        return "other"
-    
-    # Decide based on highest score
+            
+    # Substring fallback for compound tags (e.g. "anime girl")
+    for tag in tags_set:
+        if "anime" in tag or "hentai" in tag or "waifu" in tag:
+            anime_score += 1
+        if "realistic" in tag or "photoreal" in tag:
+            realistic_score += 1
+            
     max_score = max(anime_score, realistic_score, threed_score)
     
     if max_score == 0:
         return "other"
     
-    # If 3D has score and anime also has score, it's anime_3d
-    if threed_score > 0 and anime_score > 0:
-        return "anime_3d"
-    
-    # If tied between anime and realistic, use stricter check
+    # 3D rule: it must have a decent threed_score
+    if threed_score >= 2:
+        if anime_score >= 2:
+            return "anime_3d"
+        if threed_score == max_score:
+            return "other"
+            
     if anime_score == realistic_score:
-        has_strong_anime = any(kw in tags_str for kw in strong_anime)
-        has_strong_realistic = any(kw in tags_str for kw in strong_realistic)
+        has_strong_anime = any(t in tags_set for t in strong_anime)
+        has_strong_realistic = any(t in tags_set for t in strong_realistic)
         if has_strong_anime and not has_strong_realistic:
             return "anime_2d"
         elif has_strong_realistic and not has_strong_anime:
             return "realistic_human"
         return "other"
-    
-    # Otherwise, pick highest
+        
     if anime_score == max_score:
         return "anime_2d"
     elif realistic_score == max_score:
         return "realistic_human"
-    elif threed_score == max_score:
-        return "anime_3d"
-    
+        
     return "other"
 
 
