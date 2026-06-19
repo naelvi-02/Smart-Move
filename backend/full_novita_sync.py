@@ -15,7 +15,17 @@ from config import get_settings
 
 settings = get_settings()
 API_KEY = settings.novita_api_key.strip()
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'smart_move.db')
+db_url = settings.database_url
+if db_url.startswith("sqlite:///"):
+    path_part = db_url.replace("sqlite:///", "")
+    if path_part.startswith("./"):
+        # Resolve relative to the project root (one level up from backend)
+        DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), path_part[2:])
+    else:
+        DB_PATH = path_part
+else:
+    # Fallback
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'smart_move.db')
 
 def determine_style_bucket(categories: List[str], name: str, sd_name: str) -> str:
     name_lower = name.lower()
