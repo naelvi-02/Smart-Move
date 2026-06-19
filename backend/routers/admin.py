@@ -188,8 +188,9 @@ novita_job = {
 novita_process = None
 
 def load_novita_initial_processed():
-    from database import SessionLocal
+    from database import SessionLocal, init_db
     from models import Model
+    init_db() # Ensure DB schema is updated
     db = SessionLocal()
     try:
         processed = db.query(Model).filter(Model.source == "civitai", Model.novita_checked == True).count()

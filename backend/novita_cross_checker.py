@@ -10,11 +10,12 @@ load_dotenv(env_path)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database import SessionLocal
+from database import SessionLocal, init_db
 from models import Model
 from config import get_settings
 
 def check_novita_availability():
+    init_db()
     settings = get_settings()
     api_key = settings.novita_api_key.strip()
     db = SessionLocal()

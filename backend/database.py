@@ -32,4 +32,13 @@ def get_db():
 def init_db():
     """Initialize database tables."""
     import models as db_models  # noqa
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine, checkfirst=True)
+    
+    # Auto-migrate novita_checked
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE models ADD COLUMN novita_checked BOOLEAN DEFAULT 0"))
+            conn.execute(text("UPDATE models SET novita_checked = 1 WHERE created_at < '2026-06-19'"))
+    except Exception:
+        pass
