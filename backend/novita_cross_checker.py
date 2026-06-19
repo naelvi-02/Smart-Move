@@ -38,13 +38,8 @@ def check_novita_availability():
         except Exception as e:
             print(f"[NOVITA] Failed to load state: {e}")
             
-    # Count total unverified models
-    total_unverified = db.query(Model).filter(
-        Model.source == "civitai",
-        Model.available_in_novita == False
-    ).count()
-    
-    target_models = total_unverified + total_processed
+    # Target models is total Civitai models
+    target_models = db.query(Model).filter(Model.source == "civitai").count()
     
     print(f"[NOVITA] Starting Novita Cross-Check... Target: {target_models} models. Resuming from Processed: {total_processed}")
     
