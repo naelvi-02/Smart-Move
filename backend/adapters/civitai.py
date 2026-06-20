@@ -50,6 +50,7 @@ async def fetch_models(
     base_models: Optional[List[str]] = None,
     tag: Optional[str] = None,
     base_url: Optional[str] = None,
+    query: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Fetch models from Civitai API with optional filters.
@@ -62,6 +63,7 @@ async def fetch_models(
         nsfw: Filter by NSFW status.
         base_models: Filter by base models (SD 1.5, SDXL 1.0, etc.).
         tag: Filter by specific tag.
+        query: Search query string.
         
     Returns:
         Dictionary with models and metadata.
@@ -85,6 +87,9 @@ async def fetch_models(
     
     if tag:
         params["tag"] = tag
+        
+    if query:
+        params["query"] = query
     
     headers = _get_headers()
     
@@ -448,6 +453,7 @@ async def fetch_all_models(
     base_models: Optional[List[str]] = None,
     tag: Optional[str] = None,
     base_url: Optional[str] = None,
+    query: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch multiple pages of models from Civitai.
@@ -459,6 +465,7 @@ async def fetch_all_models(
         nsfw: Filter by NSFW status.
         base_models: Filter by base model families.
         tag: Optional tag filter.
+        query: Optional search query.
         
     Returns:
         List of all fetched models.
@@ -475,6 +482,7 @@ async def fetch_all_models(
             base_models=base_models,
             tag=tag,
             base_url=base_url,
+            query=query,
         )
         models = result.get("models", [])
         
