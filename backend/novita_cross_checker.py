@@ -62,12 +62,25 @@ def check_novita_availability():
                     data = res.json()
                     models = data.get("models", [])
                     
+                    import re
+                    def normalize_for_match(text):
+                        return re.sub(r'[\W_]+', '', text).lower()
+                        
                     is_available = False
                     for nm in models:
                         nm_sd_name = nm.get("sd_name", "").lower()
+                        nm_model_name = nm.get("model_name", "").lower()
                         m_name_lower = m.name.lower()
                         
-                        if m_name_lower in nm_sd_name or query_name.lower() in nm_sd_name:
+                        if m_name_lower in nm_sd_name or query_name.lower() in nm_sd_name or m_name_lower in nm_model_name:
+                            is_available = True
+                            break
+                            
+                        norm_m_name = normalize_for_match(m.name)
+                        norm_sd_name = normalize_for_match(nm_sd_name)
+                        norm_nm_model = normalize_for_match(nm_model_name)
+                        
+                        if len(norm_m_name) > 3 and (norm_m_name in norm_sd_name or norm_m_name in norm_nm_model):
                             is_available = True
                             break
                             
