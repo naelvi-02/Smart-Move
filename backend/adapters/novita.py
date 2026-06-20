@@ -162,13 +162,20 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
             print(f"Failed to search Civitai for '{raw.get('name')}': {e}")
             pass
     
+    # Better fallback name for Novita
+    raw_name = raw.get("name", "")
+    if model_name and model_name.lower() not in raw_name.lower():
+        display_name = f"{model_name} {raw_name}".strip()
+    else:
+        display_name = raw_name or model_name or "Unknown Model"
+
     # Base data from Novita
     result = {
         "source": "novita",
         "model_id": str(model_id),  # Use sd_name for Novita API calls
         "type": "image",
         "provider": "novita",
-        "name": raw.get("name"),
+        "name": display_name,
         "description": raw.get("description", f"Imported from Novita ({model_name})"),
         "base_model": raw.get("sd_name_in_api", "Unknown"),
         "status": "available",
