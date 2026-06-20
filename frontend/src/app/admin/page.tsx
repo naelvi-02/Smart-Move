@@ -51,6 +51,11 @@ function getCurrentTime() {
 }
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
   const [isRunning, setIsRunning] = useState(false);
   const [cloudflareDebug, setCloudflareDebug] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -74,17 +79,62 @@ export default function App() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.naelvi.com";
 
   useEffect(() => {
+    const savedToken = localStorage.getItem("admin_token");
+    if (savedToken) {
+      setPassword(savedToken);
+      setIsAuthenticated(true);
+    }
+    setIsCheckingAuth(false);
+  }, []);
+
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        "Authorization": `Bearer ${password}`
+      }
+    });
+    if (res.status === 401) {
+      setIsAuthenticated(false);
+      localStorage.removeItem("admin_token");
+      setLoginError("Invalid password or session expired");
+      throw new Error("Unauthorized");
+    }
+    return res;
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    try {
+      const res = await fetch(`${API_URL}/api/admin/sync/status`, {
+        headers: { "Authorization": `Bearer ${password}` }
+      });
+      if (res.ok) {
+        localStorage.setItem("admin_token", password);
+        setIsAuthenticated(true);
+      } else {
+        setLoginError("Incorrect password");
+      }
+    } catch (err) {
+      setLoginError("Failed to connect to server");
+    }
+  };
+
+  useEffect(() => {
     if (logs.length > 0 && logsContainerRef.current) {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
   }, [logs]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     const timer = setInterval(async () => {
       try {
         const [resCivitai, resNovita] = await Promise.all([
-          fetch(`${API_URL}/api/admin/sync/status`),
-          fetch(`${API_URL}/api/admin/sync/novita/status`)
+          authFetch(`${API_URL}/api/admin/sync/status`),
+          authFetch(`${API_URL}/api/admin/sync/novita/status`)
         ]);
 
         let civitaiLogs: LogEntry[] = [];
@@ -122,19 +172,19 @@ export default function App() {
       }
     }, 2000);
     return () => clearInterval(timer);
-  }, [API_URL]);
+  }, [API_URL, isAuthenticated, password]);
 
   const handleToggleSync = async () => {
     if (!isRunning) {
       try {
-        await fetch(`${API_URL}/api/admin/sync/start`, { method: "POST" });
+        await authFetch(`${API_URL}/api/admin/sync/start`, { method: "POST" });
         setIsRunning(true);
       } catch (e) {
         console.error("Start sync error", e);
       }
     } else {
       try {
-        await fetch(`${API_URL}/api/admin/sync/pause`, { method: "POST" });
+        await authFetch(`${API_URL}/api/admin/sync/pause`, { method: "POST" });
         setIsRunning(false);
       } catch (e) {
         console.error("Pause sync error", e);
@@ -145,7 +195,7 @@ export default function App() {
   const handleResetSync = async () => {
     if (confirm("Are you sure you want to reset the Civitai sync progress? This will delete the checkpoint and start from 0.")) {
       try {
-        await fetch(`${API_URL}/api/admin/sync/reset`, { method: "POST" });
+        await authFetch(`${API_URL}/api/admin/sync/reset`, { method: "POST" });
         setIsRunning(false);
       } catch (e) {
         console.error("Reset sync error", e);
@@ -156,14 +206,14 @@ export default function App() {
   const handleToggleNovitaSync = async () => {
     if (!isNovitaRunning) {
       try {
-        await fetch(`${API_URL}/api/admin/sync/novita/start`, { method: "POST" });
+        await authFetch(`${API_URL}/api/admin/sync/novita/start`, { method: "POST" });
         setIsNovitaRunning(true);
       } catch (e) {
         console.error("Start Novita sync error", e);
       }
     } else {
       try {
-        await fetch(`${API_URL}/api/admin/sync/novita/pause`, { method: "POST" });
+        await authFetch(`${API_URL}/api/admin/sync/novita/pause`, { method: "POST" });
         setIsNovitaRunning(false);
       } catch (e) {
         console.error("Pause Novita sync error", e);
@@ -174,7 +224,7 @@ export default function App() {
   const handleResetNovitaSync = async () => {
     if (confirm("Are you sure you want to reset the Novita validation progress? This will delete the checkpoint and start from 0.")) {
       try {
-        await fetch(`${API_URL}/api/admin/sync/novita/reset`, { method: "POST" });
+        await authFetch(`${API_URL}/api/admin/sync/novita/reset`, { method: "POST" });
         setIsNovitaRunning(false);
       } catch (e) {
         console.error("Reset Novita sync error", e);
@@ -224,7 +274,53 @@ export default function App() {
         className="min-h-screen bg-[#09090B] text-[#FAFAFA]"
         style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
       >
-        <div className="max-w-[1200px] mx-auto px-8 py-14 space-y-5">
+        {!isAuthenticated ? (
+          <div className="flex items-center justify-center min-h-screen px-4">
+            <div 
+              className="w-full max-w-sm p-8 rounded-[24px] border border-white/[0.08]"
+              style={{
+                background: "rgba(15,15,17,0.8)",
+                backdropFilter: "blur(20px)",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.05)"
+              }}
+            >
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4" style={{ background: "rgba(59,130,246,0.1)", color: "#3B82F6" }}>
+                  <ChevronRight size={24} />
+                </div>
+                <h2 className="text-xl font-semibold text-white tracking-tight">Admin Portal</h2>
+                <p className="text-sm text-[#A1A1AA] mt-1">Enter your password to continue</p>
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password..."
+                    className="w-full px-4 py-3 bg-black/50 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all"
+                    autoFocus
+                  />
+                </div>
+                {loginError && (
+                  <p className="text-xs text-red-400 text-center">{loginError}</p>
+                )}
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl text-sm font-medium text-white transition-all"
+                  style={{
+                    background: "linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)",
+                    boxShadow: "0 0 0 1px rgba(59,130,246,0.3), 0 4px 12px rgba(59,130,246,0.2)"
+                  }}
+                >
+                  Authenticate
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-[1200px] mx-auto px-8 py-14 space-y-5">
 
           {/* ── Page header ─────────────────────────────────────────────── */}
           <div className="mb-10">
@@ -282,6 +378,7 @@ export default function App() {
           />
 
         </div>
+        )}
       </div>
     </>
   );

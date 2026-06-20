@@ -1,12 +1,21 @@
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 import subprocess
 import time
 import sys
 import os
 import datetime
 import json
+from config import get_settings
 
-router = APIRouter(prefix="/api/admin/sync", tags=["admin"])
+def verify_admin_token(authorization: str = Header(None)):
+    settings = get_settings()
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = authorization.split(" ")[1]
+    if token != settings.admin_password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+router = APIRouter(prefix="/api/admin/sync", tags=["admin"], dependencies=[Depends(verify_admin_token)])
 
 # Global state for sync jobs
 current_job = {
