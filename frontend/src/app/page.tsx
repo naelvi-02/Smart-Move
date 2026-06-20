@@ -185,6 +185,11 @@ export default function Dashboard() {
             updatedAt?: number;
           };
 
+          // FORCE CLEAR SYNC STATE TO UNSTICK UI
+          window.localStorage.removeItem(DASHBOARD_SYNC_STORAGE_KEY);
+          setSyncing(false);
+          setSyncJobId(null);
+
           if (parsed.syncStatus) {
             setSyncStatus(parsed.syncStatus);
           }
