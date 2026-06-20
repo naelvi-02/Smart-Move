@@ -117,10 +117,14 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
     # the numeric suffix in sd_name as a probable version ID first, then fall
     # back to a direct model lookup.
     civitai_data = None
+    nsfw_base_url = settings.civitai_nsfw_base_url
+    
     if civitai_version_id:
         try:
             version_id = int(civitai_version_id)
-            civitai_data = await civitai.get_model_by_version_id(version_id)
+            civitai_data = await civitai.get_model_by_version_id(version_id, base_url=nsfw_base_url)
+            if not civitai_data:
+                civitai_data = await civitai.get_model_by_version_id(version_id)
             if civitai_data:
                 print(f"✓ Enriched '{raw.get('name')}' with Civitai version #{version_id}")
         except (TypeError, ValueError):
@@ -130,7 +134,9 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
 
     if not civitai_data and civitai_reference:
         try:
-            civitai_data = await civitai.get_model_by_version_id(civitai_reference)
+            civitai_data = await civitai.get_model_by_version_id(civitai_reference, base_url=nsfw_base_url)
+            if not civitai_data:
+                civitai_data = await civitai.get_model_by_version_id(civitai_reference)
             if civitai_data:
                 print(f"✓ Enriched '{raw.get('name')}' with Civitai version #{civitai_reference}")
         except Exception:
@@ -138,7 +144,9 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
 
     if not civitai_data and civitai_reference:
         try:
-            civitai_data = await civitai.get_model_by_id(civitai_reference)
+            civitai_data = await civitai.get_model_by_id(civitai_reference, base_url=nsfw_base_url)
+            if not civitai_data:
+                civitai_data = await civitai.get_model_by_id(civitai_reference)
             if civitai_data:
                 print(f"✓ Enriched '{raw.get('name')}' with Civitai model #{civitai_reference}")
         except Exception:
@@ -152,7 +160,8 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
             search_results = await civitai.fetch_all_models(
                 query=raw.get("name"), 
                 max_pages=1, 
-                nsfw=True
+                nsfw=True,
+                base_url=nsfw_base_url
             )
             if search_results:
                 # Find the best match, typically the first one
