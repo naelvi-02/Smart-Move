@@ -24,24 +24,31 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 def verify_admin_token(authorization: str = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    token = authorization.split(" ")[1]
-    
-    db = SessionLocal()
     try:
-        config = db.query(AppConfig).filter(AppConfig.key == "admin_password").first()
-        if not config:
-            # Seed default password
-            hashed = hash_password("admin123")
-            config = AppConfig(key="admin_password", value=hashed)
-            db.add(config)
-            db.commit()
-            
-        if not verify_password(token, config.value):
+        if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Unauthorized")
-    finally:
-        db.close()
+        token = authorization.split(" ")[1]
+        
+        db = SessionLocal()
+        try:
+            config = db.query(AppConfig).filter(AppConfig.key == "admin_password").first()
+            if not config:
+                # Seed default password
+                hashed = hash_password("admin123")
+                config = AppConfig(key="admin_password", value=hashed)
+                db.add(config)
+                db.commit()
+                
+            if not verify_password(token, config.value):
+                raise HTTPException(status_code=401, detail="Unauthorized")
+        finally:
+            db.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Debug Error: {str(e)} | Trace: {error_details}")
 
 # The main router with dependency
 router = APIRouter(prefix="/api/admin/sync", tags=["admin"], dependencies=[Depends(verify_admin_token)])
