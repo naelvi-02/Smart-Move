@@ -37,7 +37,7 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
           set -euo pipefail
           cd /opt/smart-move
-          git fetch --tags origin
+          git fetch origin
           git reset --hard origin/main
           /opt/smart-move/.venv/bin/pip install -r /opt/smart-move/backend/requirements.txt
           sudo cp /opt/smart-move/deploy/aws/nginx-smart-move.conf /etc/nginx/sites-available/smart-move
