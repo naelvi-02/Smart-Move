@@ -72,10 +72,12 @@ async def fetch_models(
     
     params = {
         "limit": min(limit, 100),
-        "page": page,
         "sort": sort,
     }
     
+    if not query:
+        params["page"] = page
+        
     if types:
         params["types"] = ",".join(types)
     
