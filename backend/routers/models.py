@@ -101,8 +101,6 @@ async def run_sync_job(job_id: str) -> None:
         else:
             steps = [
                 ("openrouter", sync_openrouter_models),
-                ("civitai", lambda db: sync_civitai_models(max_pages=6, db=db)),
-                ("novita", lambda db: sync_novita_models(page_limit=15, db=db)),
             ]
         encountered_errors = False
 
