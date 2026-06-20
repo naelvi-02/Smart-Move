@@ -144,6 +144,23 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
         except Exception:
             # Silently fail - not all numbers are valid Civitai identifiers
             pass
+            
+    # NEW: Fallback to searching Civitai by name if we still have no data
+    if not civitai_data and raw.get("name"):
+        try:
+            # Search by exact name
+            search_results = await civitai.fetch_all_models(
+                query=raw.get("name"), 
+                max_pages=1, 
+                nsfw=True
+            )
+            if search_results:
+                # Find the best match, typically the first one
+                civitai_data = search_results[0]
+                print(f"✓ Enriched '{raw.get('name')}' via name search to '{civitai_data.get('name')}'")
+        except Exception as e:
+            print(f"Failed to search Civitai for '{raw.get('name')}': {e}")
+            pass
     
     # Base data from Novita
     result = {
