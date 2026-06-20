@@ -13,4 +13,4 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 pyinstaller>=6.0.0
 curl_cffi>=0.7.0
-passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0

@@ -8,7 +8,16 @@ import json
 from pydantic import BaseModel
 from database import SessionLocal
 from models import AppConfig
-from passlib.hash import bcrypt
+import bcrypt
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    except Exception:
+        return False
 
 class ChangePasswordRequest(BaseModel):
     old_password: str
@@ -24,12 +33,12 @@ def verify_admin_token(authorization: str = Header(None)):
         config = db.query(AppConfig).filter(AppConfig.key == "admin_password").first()
         if not config:
             # Seed default password
-            hashed = bcrypt.hash("admin123")
+            hashed = hash_password("admin123")
             config = AppConfig(key="admin_password", value=hashed)
             db.add(config)
             db.commit()
             
-        if not bcrypt.verify(token, config.value):
+        if not verify_password(token, config.value):
             raise HTTPException(status_code=401, detail="Unauthorized")
     finally:
         db.close()
@@ -46,12 +55,12 @@ def change_password(req: ChangePasswordRequest):
     try:
         config = db.query(AppConfig).filter(AppConfig.key == "admin_password").first()
         if not config:
-            raise HTTPException(status_code=400, detail="Config not found")
+            raise HTTPException(status_code=500, detail="Admin password not initialized")
             
-        if not bcrypt.verify(req.old_password, config.value):
+        if not verify_password(req.old_password, config.value):
             raise HTTPException(status_code=401, detail="Incorrect old password")
             
-        config.value = bcrypt.hash(req.new_password)
+        config.value = hash_password(req.new_password)
         db.commit()
         return {"status": "success"}
     finally:
