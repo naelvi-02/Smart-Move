@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Pause, X, RefreshCw, ChevronRight, Circle } from "lucide-react";
+import { Pause, X, RefreshCw, ChevronRight, Settings } from "lucide-react";
 
 type LogLevel = "INFO" | "CACHE" | "OK" | "WARN" | "DONE" | "ERROR";
 
@@ -55,6 +55,12 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSuccess, setSettingsSuccess] = useState("");
 
   const [isRunning, setIsRunning] = useState(false);
   const [cloudflareDebug, setCloudflareDebug] = useState(false);
@@ -102,6 +108,40 @@ export default function App() {
       throw new Error("Unauthorized");
     }
     return res;
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsError("");
+    setSettingsSuccess("");
+
+    if (newPassword !== confirmPassword) {
+      setSettingsError("New passwords do not match");
+      return;
+    }
+
+    try {
+      const res = await authFetch(`${API_URL}/api/admin/settings/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+      });
+
+      if (res.ok) {
+        setSettingsSuccess("Password changed successfully! Next time use your new password.");
+        setPassword(newPassword);
+        localStorage.setItem("admin_token", newPassword);
+        setOldPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setTimeout(() => setShowSettings(false), 2000);
+      } else {
+        const err = await res.json();
+        setSettingsError(err.detail || "Failed to change password");
+      }
+    } catch (e: any) {
+      setSettingsError(e.message || "An error occurred");
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -323,26 +363,100 @@ export default function App() {
           <div className="max-w-[1200px] mx-auto px-8 py-14 space-y-5">
 
           {/* ── Page header ─────────────────────────────────────────────── */}
-          <div className="mb-10">
-            <nav className="flex items-center gap-1.5 mb-3">
-              <span
-                className="text-[11px] text-[#52525B] tracking-[0.1em] uppercase"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                AI Model Platform
-              </span>
-              <ChevronRight size={12} className="text-[#3F3F46]" />
-              <span
-                className="text-[11px] text-[#52525B] tracking-[0.1em] uppercase"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                Management
-              </span>
-            </nav>
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-white">
-              Data Sync &amp; Management
-            </h1>
+          <div className="flex items-center justify-between mb-10">
+            <div>
+              <nav className="flex items-center gap-1.5 mb-3">
+                <span
+                  className="text-[11px] text-[#52525B] tracking-[0.1em] uppercase"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  AI Model Platform
+                </span>
+                <ChevronRight size={12} className="text-[#3F3F46]" />
+                <span
+                  className="text-[11px] text-[#52525B] tracking-[0.1em] uppercase"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  Management
+                </span>
+              </nav>
+              <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-white">
+                Data Sync &amp; Management
+              </h1>
+            </div>
+            
+            <button
+              onClick={() => setShowSettings(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 border border-white/10"
+            >
+              <Settings size={16} />
+              Settings
+            </button>
           </div>
+
+          {showSettings && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div 
+                className="w-full max-w-md p-8 rounded-[24px] border border-white/[0.08] relative"
+                style={{
+                  background: "rgba(15,15,17,0.95)",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.05)"
+                }}
+              >
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+                
+                <h2 className="text-xl font-semibold text-white mb-6">Change Password</h2>
+                
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-white/60 mb-1">Current Password</label>
+                    <input
+                      type="password"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-black/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-blue-500/50"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-white/60 mb-1">New Password</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-black/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-blue-500/50"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-white/60 mb-1">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-black/50 border border-white/10 rounded-xl text-white focus:outline-none focus:border-blue-500/50"
+                      required
+                    />
+                  </div>
+                  
+                  {settingsError && <p className="text-xs text-red-400">{settingsError}</p>}
+                  {settingsSuccess && <p className="text-xs text-emerald-400">{settingsSuccess}</p>}
+                  
+                  <button
+                    type="submit"
+                    className="w-full mt-2 py-3 rounded-xl text-sm font-medium text-white transition-all bg-white/10 hover:bg-white/20"
+                  >
+                    Update Password
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* ── Section 1: Mass Sync ─────────────────────────────────────── */}
           <MassSyncCard

@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     novita_api_key: str = ""
     civitai_api_key: str = ""
-    admin_password: str = "admin123"
     
     # Database
     database_url: str = "sqlite:///./smart_move.db"

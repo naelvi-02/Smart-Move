@@ -5,17 +5,57 @@ import sys
 import os
 import datetime
 import json
-from config import get_settings
+from pydantic import BaseModel
+from database import SessionLocal
+from models import AppConfig
+from passlib.hash import bcrypt
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 def verify_admin_token(authorization: str = Header(None)):
-    settings = get_settings()
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     token = authorization.split(" ")[1]
-    if token != settings.admin_password:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    db = SessionLocal()
+    try:
+        config = db.query(AppConfig).filter(AppConfig.key == "admin_password").first()
+        if not config:
+            # Seed default password
+            hashed = bcrypt.hash("admin123")
+            config = AppConfig(key="admin_password", value=hashed)
+            db.add(config)
+            db.commit()
+            
+        if not bcrypt.verify(token, config.value):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    finally:
+        db.close()
 
+# The main router with dependency
 router = APIRouter(prefix="/api/admin/sync", tags=["admin"], dependencies=[Depends(verify_admin_token)])
+
+# Separate router for settings that also uses the dependency
+settings_router = APIRouter(prefix="/api/admin/settings", tags=["admin"], dependencies=[Depends(verify_admin_token)])
+
+@settings_router.post("/change-password")
+def change_password(req: ChangePasswordRequest):
+    db = SessionLocal()
+    try:
+        config = db.query(AppConfig).filter(AppConfig.key == "admin_password").first()
+        if not config:
+            raise HTTPException(status_code=400, detail="Config not found")
+            
+        if not bcrypt.verify(req.old_password, config.value):
+            raise HTTPException(status_code=401, detail="Incorrect old password")
+            
+        config.value = bcrypt.hash(req.new_password)
+        db.commit()
+        return {"status": "success"}
+    finally:
+        db.close()
 
 # Global state for sync jobs
 current_job = {

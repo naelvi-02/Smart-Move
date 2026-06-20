@@ -57,6 +57,7 @@ app.include_router(models.router)
 app.include_router(benchmarks.router)
 app.include_router(cost.router)
 app.include_router(admin.router)
+app.include_router(admin.settings_router)
 
 @app.get("/")
 async def root():

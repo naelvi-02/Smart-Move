@@ -115,3 +115,11 @@ class BenchmarkResult(Base):
     notes = Column(Text, nullable=True)
     
     created_at = Column(DateTime, server_default=func.now())
+
+class AppConfig(Base):
+    """Stores application-wide configuration like hashed admin password."""
+    __tablename__ = "app_config"
+    
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
