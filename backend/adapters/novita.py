@@ -161,7 +161,8 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
                 query=raw.get("name"), 
                 max_pages=1, 
                 nsfw=True,
-                base_url=nsfw_base_url
+                base_url=nsfw_base_url,
+                types=["Checkpoint"]
             )
             if search_results:
                 # Find the best match, typically the first one
