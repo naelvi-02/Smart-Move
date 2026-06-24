@@ -452,8 +452,8 @@ async def list_image_models(
     List image models only with total count.
     Supports sorting: popular, downloads, likes, newest.
     """
-    civitai_names_subquery = db.query(Model.name).filter(
-        Model.source == "civitai", 
+    novita_names_subquery = db.query(Model.name).filter(
+        Model.source == "novita", 
         Model.type == "image",
         Model.available_in_novita == True
     ).subquery()
@@ -463,8 +463,8 @@ async def list_image_models(
         Model.nsfw_flag == True,
         Model.available_in_novita == True,
         or_(
-            Model.source == "civitai",
-            and_(Model.source == "novita", ~Model.name.in_(civitai_names_subquery))
+            Model.source == "novita",
+            and_(Model.source == "civitai", ~Model.name.in_(novita_names_subquery))
         )
     )
     
