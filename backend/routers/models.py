@@ -224,46 +224,12 @@ def refresh_civitai_novita_availability(db: Session) -> int:
         Model.type == "image"
     ).all()
 
-    civitai_models_by_name = {}
-    for model in civitai_models:
-        civitai_name = normalize_model_name(getattr(model, "name", None))
-        if len(civitai_name) < 5:
-            continue
-        civitai_models_by_name.setdefault(civitai_name, []).append(model)
-
-    name_fallback_ids = set()
-    for civitai_name, grouped_models in civitai_models_by_name.items():
-        if civitai_name not in novita_names:
-            continue
-
-        has_exact_id_match = any(
-            str(getattr(model, "model_id", "")) in novita_civitai_ids
-            for model in grouped_models
-        )
-        if has_exact_id_match:
-            continue
-
-        best_model = max(
-            grouped_models,
-            key=lambda model: (
-                getattr(model, "download_count", 0) or 0,
-                getattr(model, "favorite_count", 0) or 0,
-                getattr(model, "popularity_score", 0) or 0,
-            ),
-        )
-        name_fallback_ids.add(getattr(best_model, "id", None))
-
     for model in civitai_models:
         model_obj = cast(Any, model)
         civitai_model_id = str(getattr(model, "model_id", ""))
-        civitai_name = normalize_model_name(getattr(model, "name", None))
 
         is_available = civitai_model_id in novita_civitai_ids
         matched_nsfw = novita_nsfw_by_id.get(civitai_model_id, False)
-
-        if not is_available and len(civitai_name) >= 5 and getattr(model, "id", None) in name_fallback_ids:
-            is_available = True
-            matched_nsfw = novita_nsfw_by_name.get(civitai_name, False)
 
         if getattr(model, "available_in_novita", False) != is_available:
             model_obj.available_in_novita = is_available
@@ -452,20 +418,11 @@ async def list_image_models(
     List image models only with total count.
     Supports sorting: popular, downloads, likes, newest.
     """
-    novita_names_subquery = db.query(Model.name).filter(
-        Model.source == "novita", 
-        Model.type == "image",
-        Model.available_in_novita == True
-    ).subquery()
-
     query = db.query(Model).filter(
         Model.type == "image",
         Model.nsfw_flag == True,
         Model.available_in_novita == True,
-        or_(
-            Model.source == "novita",
-            and_(Model.source == "civitai", ~Model.name.in_(novita_names_subquery))
-        )
+        Model.source == "novita"
     )
     
     if source:
@@ -699,7 +656,10 @@ async def sync_novita_models(page_limit: int = 15, db: Session = Depends(get_db)
         civitai_linked_updated = 0
         errors = []
         
+        fetched_novita_ids = set()
+        
         for data in models_data:
+            fetched_novita_ids.add(data["model_id"])
             try:
                 linked_civitai_data = cast(Optional[dict[str, Any]], data.pop("_linked_civitai_data", None))
 
@@ -726,6 +686,15 @@ async def sync_novita_models(page_limit: int = 15, db: Session = Depends(get_db)
                         civitai_linked_updated += 1
             except Exception as e:
                 errors.append(f"Error syncing {data.get('model_id', 'unknown')}: {str(e)}")
+
+        if fetched_novita_ids:
+            hidden_count = db.query(Model).filter(
+                Model.source == "novita",
+                Model.model_id.notin_(fetched_novita_ids),
+                Model.available_in_novita == True
+            ).update({"available_in_novita": False}, synchronize_session=False)
+            if hidden_count > 0:
+                print(f"Hid {hidden_count} Novita models that are no longer in the API")
 
         refresh_civitai_novita_availability(db)
 
