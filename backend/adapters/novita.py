@@ -154,11 +154,12 @@ async def normalize_image_model_with_civitai(raw: Dict[str, Any]) -> Optional[Di
             pass
             
     # NEW: Fallback to searching Civitai by name if we still have no data
-    if not civitai_data and raw.get("name"):
+    search_query = raw.get("model_name") or raw.get("name")
+    if not civitai_data and search_query:
         try:
             # Search by exact name
             search_results = await civitai.fetch_all_models(
-                query=raw.get("name"), 
+                query=search_query, 
                 max_pages=1, 
                 nsfw=True,
                 base_url=nsfw_base_url,
